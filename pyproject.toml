@@ -13,16 +13,17 @@ authors = [
   { name = "icy-swan" }
 ]
 dependencies = [
-  "pandas>=2.2",
-  "python-dotenv>=1.0",
-  "pydantic>=2.7",
-  "openai>=1.0"
+  "charset-normalizer>=3.4,<4",
+  "openai>=2.0,<3",
+  "pandas>=2.2,<3",
+  "pydantic>=2.7,<3",
+  "python-dotenv>=1.0,<2"
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=8.2",
-  "ruff>=0.5"
+  "pytest>=8.2,<10",
+  "ruff>=0.5,<1"
 ]
 
 [tool.setuptools.packages.find]
@@ -37,4 +38,3 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-

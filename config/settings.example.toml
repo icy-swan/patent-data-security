@@ -1,0 +1,15 @@
+[input]
+csv_path = "data/raw/patents.csv"
+encoding = "utf-8"
+
+[output]
+csv_path = "data/processed/patent_data_security_results.csv"
+
+[llm]
+model = "${LLM_MODEL}"
+temperature = 0
+
+[classification]
+positive_label = "data_security"
+negative_label = "not_data_security"
+

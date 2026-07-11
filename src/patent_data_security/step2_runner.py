@@ -16,7 +16,11 @@ from typing import Any
 
 from patent_data_security.datasets import dataset_id
 from patent_data_security.records import PatentRecord, iter_patent_records
-from patent_data_security.step2_prompt import ArkClassificationResponse, VolcengineArkClient
+from patent_data_security.step2_prompt import (
+    PROMPT_VERSION,
+    ArkClassificationResponse,
+    VolcengineArkClient,
+)
 
 RESULT_FIELDS = (
     "task_id",
@@ -31,10 +35,17 @@ RESULT_FIELDS = (
     "attempts",
     "requested_model",
     "actual_model",
+    "prompt_version",
     "response_id",
     "cat",
     "confidence",
     "subtype",
+    "core_invention",
+    "protected_object_or_activity",
+    "security_goal_or_risk",
+    "technical_mechanism",
+    "causal_centrality",
+    "missing_or_ambiguous_link",
     "evidence",
     "reason",
     "review_flag",
@@ -170,7 +181,7 @@ def prepare_classification_tasks(
         if selected_item is None:
             continue
         patent_id, selection = selected_item
-        payload = _payload_from_record(record, dataset, patent_id, selection)
+        payload = _payload_from_record(record)
         task_id = _task_id(dataset, patent_id)
         connection.execute(
             """
@@ -367,8 +378,6 @@ def _selection_from_step1_row(
     return {
         "source_row_number": int(row["source_row_number"]),
         "keyword_level": tier,
-        "keyword_hits": json.loads(row["keyword_hits"]),
-        "diagnostic_hits": json.loads(row["diagnostic_hits"]),
         "selection_group": tier if tier != "E" else "E_sample",
         "selection_probability": probability,
         "sample_weight": 1 / probability,
@@ -377,26 +386,15 @@ def _selection_from_step1_row(
 
 def _payload_from_record(
     record: PatentRecord,
-    dataset: str,
-    patent_id: str,
-    selection: dict[str, Any],
 ) -> dict[str, Any]:
+    """Return only evidence fields allowed to leave the local environment for the LLM."""
+
     return {
-        "dataset_id": dataset,
-        "patent_id": patent_id,
-        "source_row_number": record.row_number,
-        "application_year": record.get("application_year"),
         "title": record.get("title"),
         "abstract": record.get("abstract"),
         "claim": record.get("claim"),
         "ipc": record.get("ipc"),
         "main_ipc": record.get("main_ipc"),
-        "keyword_level": selection["keyword_level"],
-        "keyword_hits": selection["keyword_hits"],
-        "diagnostic_hits": selection["diagnostic_hits"],
-        "selection_group": selection["selection_group"],
-        "selection_probability": selection["selection_probability"],
-        "sample_weight": selection["sample_weight"],
     }
 
 
@@ -481,6 +479,7 @@ def _progress_from_database(
         "database": str(paths.database),
         "results": str(paths.results),
         "model": model,
+        "prompt_version": PROMPT_VERSION,
         "actual_models": [
             row[0]
             for row in connection.execute(
@@ -515,6 +514,7 @@ def _append_result(paths: Step2Paths, connection: sqlite3.Connection, task_id: s
 
 def _result_row(row: sqlite3.Row) -> dict[str, Any]:
     result = json.loads(row["result_json"]) if row["result_json"] else {}
+    evidence_chain = result.get("evidence_chain", {})
     return {
         "task_id": row["task_id"],
         "dataset_id": row["dataset_id"],
@@ -528,10 +528,21 @@ def _result_row(row: sqlite3.Row) -> dict[str, Any]:
         "attempts": row["attempts"],
         "requested_model": row["requested_model"] or "",
         "actual_model": row["actual_model"] or "",
+        "prompt_version": PROMPT_VERSION,
         "response_id": row["response_id"] or "",
         "cat": result.get("cat", ""),
         "confidence": result.get("confidence", ""),
         "subtype": result.get("subtype", ""),
+        "core_invention": result.get("core_invention", ""),
+        "protected_object_or_activity": evidence_chain.get(
+            "protected_object_or_activity", ""
+        ),
+        "security_goal_or_risk": evidence_chain.get("security_goal_or_risk", ""),
+        "technical_mechanism": evidence_chain.get("technical_mechanism", ""),
+        "causal_centrality": evidence_chain.get("causal_centrality", ""),
+        "missing_or_ambiguous_link": evidence_chain.get(
+            "missing_or_ambiguous_link", ""
+        ),
         "evidence": json.dumps(result.get("evidence", []), ensure_ascii=False),
         "reason": result.get("reason", ""),
         "review_flag": result.get("review_flag", ""),

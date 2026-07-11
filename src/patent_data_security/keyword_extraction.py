@@ -1,4 +1,14 @@
-"""Step 1: deterministic keyword extraction with auditable context retrieval."""
+"""Step 1: deterministic keyword extraction with auditable context retrieval.
+
+上下文检索并不在本文件里重新写一套正则，而是统一调用 ``PatentRouter.route_keywords``：
+
+1. ``routing.py`` 先定位摘要/主权项中的关键词；
+2. 对每个关键词优先取完整句子，没有可靠句界时取左右各 48 字；
+3. 在该范围内检索保护对象、生命周期动作、保护动作、安全目标和威胁词表；
+4. 将关联结果写入每个关键词的 ``context_hits``，本文件负责把它落盘到 Step 1 CSV。
+
+这样 Step 1 与后续步骤读取的是同一份可审计上下文证据，不会出现两套匹配逻辑。
+"""
 
 from __future__ import annotations
 
@@ -13,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from patent_data_security.datasets import dataset_id
 from patent_data_security.records import PatentRecord, iter_patent_records
 from patent_data_security.routing import PatentRouter
 from patent_data_security.taxonomy import TaxonomyBundle, load_taxonomies
@@ -104,6 +115,8 @@ def extract_keywords_csv(
     """Scan DOCS fields once and write separate S/W/R/E keyword files.
 
     This function is fully local and deliberately has no dependency on the LLM module.
+    CSV 的 ``keyword_hits`` 字段包含每个关键词的 ``context_scope``、
+    ``context_snippet`` 和 ``context_hits``，不是只输出一个关键词字符串。
     """
 
     if workers < 1:
@@ -111,13 +124,13 @@ def extract_keywords_csv(
     source = Path(input_path).resolve()
     destination = Path(output_dir).resolve()
     destination.mkdir(parents=True, exist_ok=True)
-    year = _year_token(source)
+    dataset = dataset_id(source)
     outputs = KeywordExtractionOutputs(
-        s=destination / f"keyword_S_{year}.csv",
-        w=destination / f"keyword_W_{year}.csv",
-        r=destination / f"keyword_R_{year}.csv",
-        e=destination / f"keyword_E_{year}.csv",
-        summary=destination / f"keyword_summary_{year}.json",
+        s=destination / f"keyword_S_{dataset}.csv",
+        w=destination / f"keyword_W_{dataset}.csv",
+        r=destination / f"keyword_R_{dataset}.csv",
+        e=destination / f"keyword_E_{dataset}.csv",
+        summary=destination / f"keyword_summary_{dataset}.json",
     )
     output_paths = (*outputs.by_tier().values(), outputs.summary)
     if not overwrite and any(path.exists() for path in output_paths):
@@ -206,6 +219,7 @@ def extract_keywords_csv(
     summary = {
         "schema_version": "1.0.0",
         "step": "step1_keyword_extraction",
+        "dataset_id": dataset,
         "input_path": str(source),
         "input_size_bytes": source.stat().st_size,
         "docs_taxonomy_version": bundle.docs["taxonomy_version"],
@@ -243,9 +257,14 @@ def _process_record(
     router: PatentRouter,
     taxonomy_version: str,
 ) -> _ProcessedKeywordRecord:
+    # 这里调用的不是“裸关键词查找”。route_keywords 会为每个关键词同步执行上下文关联检索，
+    # 并对必须共现的词项（例如零知识证明）按 context_hits 做 required_any 门控。
     routing = router.route_keywords(record)
     hits = routing.keyword_hits_jsonable()
     diagnostics = routing.diagnostics_jsonable()
+
+    # context_hits 是实际关联到的上下文词明细（词表 ID、类型、位置、距离、片段、来源）。
+    # 计数和完整 JSON 都会写入分层 CSV，后续可以直接检查某个关键词为何被路由到该层。
     context_hit_count = sum(len(hit["context_hits"]) for hit in hits)
     context_scopes = tuple(hit["context_scope"] for hit in hits)
     context_scope_modes = sorted(set(context_scopes))
@@ -305,8 +324,3 @@ def _atomic_json_write(path: Path, value: dict[str, Any]) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(temporary, path)
-
-
-def _year_token(path: Path) -> str:
-    digits = "".join(character for character in path.stem if character.isdigit())
-    return digits[:4] if len(digits) >= 4 else "dataset"

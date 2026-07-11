@@ -1,88 +1,125 @@
-# Spec 002: 数据安全专利混合分类与 2021 年处理
+# Spec 002：逐条调用火山方舟的数据安全专利三分类
 
-- 状态：Accepted
-- 版本：1.0.0
+- 状态：Draft
+- 版本：2.0.0
 - 日期：2026-07-11
-- 输入：`data/raw/上市公司专利明细_2021年申请.csv`
+- 上游：Step 1 的 S/W/R/E 关键词与上下文检索结果
 
 ## 1. 目标
 
-以 Spec 001 的 DOCS/IPC 四级体系生成候选路由，再由 LLM 对候选专利做三分类。首轮处理 2021 年申请数据，所有算法、配置、提示词和输出字段必须可直接复用于后续十年数据。
+Step 2 对 Step 1 的唯一专利执行大模型三分类：
 
-## 2. 方法继承
+- S、W、R 层全部进入模型；
+- E 层按唯一 `patent_id` 进行稳定 2% 概率抽样，用于估计 Step 1 的漏召；
+- 同一申请号关联多个上市公司时只请求一次，避免重复费用；
+- 每次只请求一件专利，不使用 Batch JSONL 或批量推理 API；
+- 任务可以随时停止、查看结果并从未完成任务继续。
 
-1. 继承蒋伟杰等文“先定义目标技术、再做全文语义识别、用人工样本校准”的路径，但不移植其算法创新主题、CoSENT 相似度阈值或 0.61 阈值。
-2. 继承皮淑雯等文“大模型标注、人工多轮核验、训练/验证/测试隔离、判据同时覆盖直接表述与间接功效”的研究设计。
-3. 按《数据安全专利识别方案（结论版）》确定主线：S/W/R/E 双路由、LLM 三分类、Gold Set 人工校验；RoBERTa/MacBERT 分类器和微调 LLM 留作后续比较模型。
-4. 不把 MacBERT/CoSENT 多主题余弦相似度作为主分类器。该方案可作为论文稳健性或比较实验，但不适合作为当前多子类型、强边界判断的唯一依据。
+## 2. 模型接入
 
-## 3. 路由算法
+采用火山方舟 Responses API，基础地址为：
 
-`DOCS = 摘要文本 + 主权项内容`。分别扫描两个字段并保留字段级证据：
+```text
+https://ark.cn-beijing.volces.com/api/v3
+```
 
-- Unicode NFKC、英文小写化、合并水平空白，不删除否定词和句子边界；
-- 同一位置最长词优先，防止“同态加密”再次产生裸“加密”命中；
-- `cooccurrence` 词必须在同句或左右 48 字窗口命中指定上下文；
-- 生产、交通、食品等安全场景仅记录为诊断项，不参与降级；
-- IPC 同时读取主分类号和全部分类号，标准化并按最具体规则匹配；
-- `route_level = max(keyword_level, ipc_level)`，顺序为 `S > W > R > E`。
+运行环境使用：
 
-S/W/R 全量进入 LLM。E 不自动归为不相关，而按 `年度 × 行业 × IPC 部 × 文本完整性` 形成层，并使用稳定哈希概率抽样。每条 E 样本保存 `selection_probability` 和 `sample_weight=1/p`。
+- `ARK_API_KEY`：API Key；
+- `ARK_MODEL`：具体模型或推理接入点 ID；
+- `ARK_BASE_URL`：可选，默认使用北京地域 v3 地址。
 
-## 4. 最终三分类
+`src/patent_data_security/step2_prompt.py` 必须独立提供：
+
+1. `build_classification_prompt`：只负责构造单件专利的分类 Prompt；
+2. `VolcengineArkClient.classify`：只执行一次同步模型请求并校验一次响应。
+
+## 3. 输入与抽样
+
+每个年份从以下文件读取 Step 1 路由：
+
+```text
+data/step1/keyword_S_<dataset_id>.csv
+data/step1/keyword_W_<dataset_id>.csv
+data/step1/keyword_R_<dataset_id>.csv
+data/step1/keyword_E_<dataset_id>.csv
+```
+
+按 S、W、R、E 顺序去重；同一 `patent_id` 若出现在多个层级，保留最高层级。E 层仅在排除
+已进入 S/W/R 的专利后抽样。抽样使用固定 seed 与稳定哈希，概率为 0.02，保存：
+
+- `selection_group=E_sample`；
+- `selection_probability=0.02`；
+- `sample_weight=50`。
+
+S/W/R 的概率和权重均为 1。
+
+## 4. 三分类定义
 
 | 类别 | 定义 |
 | --- | --- |
-| 1 | 核心技术方案直接保护数据、个人信息、敏感数据、数据库、文件、数据流或数据资产，或保护数据生命周期环节 |
-| 2 | 属于网络、系统、应用、设备、通信、交易或物理安全，但核心保护对象不是数据或数据处理活动 |
+| 1 | 核心技术直接保护数据、个人信息、数据库、文件、数据流、模型参数或数据生命周期活动 |
+| 2 | 属于网络、系统、应用、设备、通信、交易或物理安全，但核心保护对象不是数据 |
 | 3 | 与安全无关，或仅涉及生产、食品、交通、消防等一般安全 |
 
-模型必须判断“核心技术对象与核心改进”，不得因命中关键词或 IPC 直接给类别 1。证据只能摘自标题、摘要、主权项或 IPC；证据不足时仍在 1/2/3 中选择最合理类别，并通过 `review_flag` 标记复核，不新增“无法判断”类别。
+关键词层级与上下文关联只作为召回和辅助证据，不能直接决定类别。不得设置“无法判断”类别；
+不确定性通过 `review_flag` 与 `review_reason` 表示。
 
-## 5. LLM 输出契约
+## 5. 输出契约
 
-每条结果必须通过 JSON Schema/Pydantic 验证，包含：
+模型必须返回单个 JSON 对象，并通过 Pydantic 校验：
 
 - `cat`：1、2、3；
 - `confidence`：0 到 1；
 - `subtype`：固定枚举；
-- `evidence`：最多 3 条原文证据；
+- `evidence`：1 到 3 条输入原文证据；
 - `reason`：核心技术对象与边界判断；
 - `review_flag`、`review_reason`。
 
-批处理请求使用唯一 `custom_id`，合并时只按该 ID 连接，禁止依赖批处理输出顺序。失败响应单独记录，不伪造标签。
+无效 JSON、非法类别或 subtype/category 冲突都视为失败请求，按配置重试；超过最大次数后记录
+为 `failed`，不得伪造标签。
 
-## 6. 可恢复处理与产物
+## 6. 可恢复状态与进度
 
-全年路由采用 CSV 流式读取，每 50,000 条刷新并记录输出字节偏移、累计计数和最后源行号。恢复时先把临时文件截断到已确认偏移，再继续处理，避免重复。
+每个数据集使用三个 Step 2 产物：
 
-主要产物：
+```text
+data/step2/classification_state_<dataset_id>.sqlite3
+data/step2/classification_results_<dataset_id>.csv
+data/step2/classification_progress_<dataset_id>.json
+```
 
-- `data/step2/patent_routes_2021.csv`：全量紧凑路由与审计字段；
-- `data/step2/patent_llm_candidates_2021.jsonl`：S/W/R 全量及 E 抽样文本；
-- `data/step2/route_summary_2021.json`：分布、缺失和运行元数据；
-- `data/step3/batch_*.jsonl`：可提交的 LLM Batch 请求；
-- `data/step5/patent_classifications_2021.csv`：经 schema 校验的三分类结果。
+SQLite 是任务状态事实来源。任务状态为 `pending/running/succeeded/failed`；重启时把遗留的
+`running` 恢复为 `pending`。每次请求结束后立即提交数据库、更新 CSV 和进度 JSON。
 
-原始表中的同一申请号可能因上市公司关联关系出现多行。路由表保留全部公司行；LLM 候选按
-`patent_id` 去重，并用共享 `classification_key` 回连，避免重复付费和重复标签。
+进度至少包含：
 
-## 7. 质量与论文口径
+- 总任务数、完成数、成功数、失败数、待处理数和百分比；
+- 请求使用的模型与实际返回模型；
+- 平均请求耗时、平均完成任务耗时和预计剩余秒数；
+- 最近更新时间。
 
-优先级为：类别 1 召回率、类别 1 精确率、类别 1 F1、类别 1/2 混淆、总体准确率。Gold Set 必须覆盖：
+## 7. 后台运行与停止
 
-- S/W/R 各层及加权 E 样本；
-- 类别 1 与类别 2 的边界样本；
-- 缺摘要、缺主权项、IPC 异常和诊断场景；
-- 模型低置信度与路由/模型冲突样本。
+`scripts/step2_llm_classification.py` 提供：
 
-模型版本、taxonomy 版本、提示词版本、随机种子、抽样概率和失败状态必须保留。未经人工 Gold Set 校准的 LLM 输出只能记为机器标签，不得直接称为论文最终标签。
+- `prepare`：只创建任务，不调用模型；
+- `run`：前台逐条请求；
+- `start`：启动独立后台进程；
+- `status`：读取 PID 和各数据集进度；
+- `stop`：发送停止信号，当前请求结束后安全退出。
+
+十年原始 CSV 默认从 `data/raw/*.csv` 自动发现并按文件名中的年份形成 `dataset_id`，按年份顺序
+串行处理，避免十个后台进程同时消耗配额。
 
 ## 8. 验收标准
 
-- [x] 路由单元测试覆盖最长词、上下文、诊断不降级、IPC 最具体规则与 E 抽样稳定性。
-- [x] LLM 输出 schema 只有三类，非法结果不能进入成品表。
-- [x] 全年扫描记录数与源 CSV 数据行数一致。
-- [x] 全量路由、候选、抽样权重和汇总相互一致。
-- [x] 无 API 凭证时仍可完成本地路由和候选构建，并明确标记 `pending_llm`。
-- [x] 数据产物保持 Git ignore，不提交原始或派生专利文本。
+- [x] S/W/R 唯一专利全部进入任务库；
+- [x] E 唯一专利按稳定 2% 概率抽样并保存权重 50；
+- [x] 相同行号出现在不同年份时，`task_id` 不冲突；
+- [x] Prompt 构建与 API 调用相互独立；
+- [x] 单元测试使用假客户端，不产生真实模型请求；
+- [x] 中断后不会重复请求已经成功或最终失败的任务；
+- [x] 进度文件包含模型、平均耗时和 ETA；
+- [x] 不生成 Batch JSONL 文件；
+- [ ] 配置真实方舟模型后完成少量在线 smoke test。

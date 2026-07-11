@@ -19,16 +19,10 @@ venv/
 
 # Data and outputs
 data/raw/*
-data/interim/*
-data/processed/*
-outputs/*
+data/step*/
 !data/raw/.gitkeep
-!data/interim/.gitkeep
-!data/processed/.gitkeep
-!outputs/.gitkeep
 
 # OS and editor files
 .DS_Store
 .idea/
 .vscode/
-

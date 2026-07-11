@@ -31,6 +31,71 @@ def test_cooccurrence_term_requires_local_data_context() -> None:
     assert with_context.keyword_hits[0].context_ids == ("CTX-DATA-OBJECT",)
 
 
+def test_context_retrieval_prefers_full_sentence_over_48_char_window() -> None:
+    text = "用户数据" + "甲" * 60 + "采用零知识证明。下一句无关。"
+    result = PatentRouter(load_taxonomies()).route(
+        record(abstract=text, claim="", ipc="", main_ipc="")
+    )
+
+    hit = result.keyword_hits[0]
+    assert result.keyword_level == "W"
+    assert hit.context_scope == "sentence"
+    assert hit.context_ids == ("CTX-DATA-OBJECT",)
+    assert any(context.keyword == "用户数据" for context in hit.context_hits)
+
+
+def test_context_retrieval_uses_48_char_window_without_sentence_punctuation() -> None:
+    router = PatentRouter(load_taxonomies())
+    within_window = router.route(
+        record(
+            abstract="用户数据" + "甲" * 40 + "零知识证明",
+            claim="",
+            ipc="",
+            main_ipc="",
+        )
+    )
+    outside_window = router.route(
+        record(
+            abstract="用户数据" + "甲" * 60 + "零知识证明",
+            claim="",
+            ipc="",
+            main_ipc="",
+        )
+    )
+
+    assert within_window.keyword_level == "W"
+    assert within_window.keyword_hits[0].context_scope == "window"
+    assert outside_window.keyword_level == "E"
+
+
+def test_context_retrieval_does_not_cross_sentence_boundary() -> None:
+    result = PatentRouter(load_taxonomies()).route(
+        record(
+            abstract="用户数据。采用零知识证明完成计算。",
+            claim="",
+            ipc="",
+            main_ipc="",
+        )
+    )
+
+    assert result.keyword_level == "E"
+
+
+def test_standalone_keyword_retains_context_associations() -> None:
+    result = PatentRouter(load_taxonomies()).route(
+        record(abstract="用户数据采用加密保护。", claim="", ipc="", main_ipc="")
+    )
+
+    hit = result.keyword_hits[0]
+    assert result.keyword_level == "R"
+    assert hit.keyword == "加密"
+    assert hit.context_ids == ()
+    assert {(context.context_id, context.keyword) for context in hit.context_hits} >= {
+        ("CTX-DATA-OBJECT", "用户数据"),
+        ("CTX-PROTECTION-ACTION", "保护"),
+    }
+
+
 def test_neighbor_safety_diagnostic_never_lowers_route() -> None:
     result = PatentRouter(load_taxonomies()).route(
         record(

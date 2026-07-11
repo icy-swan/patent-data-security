@@ -1,0 +1,251 @@
+{
+  "schema_version": "1.0.0",
+  "taxonomy_version": "1.0.0",
+  "retrieved_at": "2026-07-11",
+  "sources": [
+    {
+      "id": "LAW-DSL-2021",
+      "type": "law",
+      "title": "中华人民共和国数据安全法",
+      "publisher": "中华人民共和国工业和信息化部",
+      "year": 2021,
+      "url": "https://www.miit.gov.cn/zwgk/zcwj/flfg/art/2022/art_284b390b84484f10b0e43eeafaad0f6d.html",
+      "locators": ["第3条", "第21条至第30条"],
+      "contribution": "数据安全、分类分级、重要数据、核心数据、风险评估、监测预警、应急处置、全流程保护。"
+    },
+    {
+      "id": "LAW-PIPL-2021",
+      "type": "law",
+      "title": "中华人民共和国个人信息保护法",
+      "publisher": "中国人大网",
+      "year": 2021,
+      "url": "https://www.npc.gov.cn/WZWSREL25wYy9jMi9jMzA4MzQvMjAyMTA4L3QyMDIxMDgyMF8zMTMwODguaHRtbD9yZWY9aW1i",
+      "locators": ["第4条", "第28条", "第51条", "第73条"],
+      "contribution": "个人信息、敏感个人信息、加密、去标识化、匿名化、未经授权访问、泄露、篡改、丢失。"
+    },
+    {
+      "id": "LAW-CSL-2016-2025",
+      "type": "law",
+      "title": "中华人民共和国网络安全法及2025年修改决定",
+      "publisher": "中国人大网、中华人民共和国工业和信息化部",
+      "year": 2025,
+      "url": "https://www.npc.gov.cn/npc/c1773/c1848/c21114/wlaqfxz/wlaqfxz002/202511/t20251103_449242.html",
+      "secondary_url": "https://www.miit.gov.cn/ztzl/rdzt/tdzzyyhlwsdrhfzjkjstggyhlwpt/zcfb/art/2020/art_41be9e94ecc5433899ca88a0339a38b6.html",
+      "locators": ["原法第21条、第22条", "2025年修改决定"],
+      "contribution": "网络日志、恶意程序、安全缺陷、漏洞、数据分类、重要数据备份和加密。"
+    },
+    {
+      "id": "REG-NDS-2024",
+      "type": "administrative_regulation",
+      "title": "网络数据安全管理条例",
+      "publisher": "中央网络安全和信息化委员会办公室",
+      "year": 2024,
+      "url": "https://www.cac.gov.cn/2024-09/30/c_1729384452307680.htm",
+      "locators": ["第9条", "第22条至第24条", "第30条"],
+      "contribution": "加密、备份、访问控制、安全认证、标签标识、匿名化，以及篡改、破坏、泄露、非法获取、非法利用等风险。"
+    },
+    {
+      "id": "LAW-CRYPT-2019",
+      "type": "law",
+      "title": "中华人民共和国密码法",
+      "publisher": "国家密码管理局",
+      "year": 2019,
+      "url": "https://www.nca.gov.cn/sca/xxgk/2023-06/04/content_1057225.shtml",
+      "locators": ["第2条", "第8条", "第26条", "第32条"],
+      "contribution": "密码、商用密码、密码检测认证、加密保护的信息和密码保障系统。"
+    },
+    {
+      "id": "STD-GB37988-2019",
+      "type": "national_standard",
+      "title": "GB/T 37988-2019 信息安全技术 数据安全能力成熟度模型",
+      "publisher": "全国标准信息公共服务平台",
+      "year": 2019,
+      "url": "https://std.samr.gov.cn/gb/search/gbDetailed?id=91890A0DA63380C6E05397BE0A0A065D",
+      "locators": ["标准范围", "数据生命周期和数据安全过程域"],
+      "contribution": "数据生命周期、数据安全过程域、组织与技术能力。"
+    },
+    {
+      "id": "STD-GB41479-2022",
+      "type": "national_standard",
+      "title": "GB/T 41479-2022 信息安全技术 网络数据处理安全要求",
+      "publisher": "全国标准信息公共服务平台",
+      "year": 2022,
+      "url": "https://std.samr.gov.cn/gb/search/gbDetailed?id=DD3D95E5C12471EBE05397BE0A0AF33F",
+      "locators": ["标准范围"],
+      "contribution": "网络数据处理活动及其安全要求。"
+    },
+    {
+      "id": "STD-GB35273-2020",
+      "type": "national_standard",
+      "title": "GB/T 35273-2020 信息安全技术 个人信息安全规范",
+      "publisher": "全国标准信息公共服务平台",
+      "year": 2020,
+      "url": "https://std.samr.gov.cn/gb/search/gbDetailed?id=A0280129495AEBB4E05397BE0A0AB6FE",
+      "locators": ["标准范围", "术语和定义"],
+      "contribution": "个人信息、个人敏感信息及个人信息处理安全。"
+    },
+    {
+      "id": "STD-GB43697-2024",
+      "type": "national_standard",
+      "title": "GB/T 43697-2024 数据安全技术 数据分类分级规则",
+      "publisher": "全国标准信息公共服务平台",
+      "year": 2024,
+      "url": "https://std.samr.gov.cn/gb/search/gbDetailed?id=14156507D2210337E06397BE0A0AE656",
+      "locators": ["标准范围", "数据分类分级规则"],
+      "contribution": "数据分类、数据分级、重要数据识别和分级保护。"
+    },
+    {
+      "id": "STD-YDT4691-2024",
+      "type": "industry_standard",
+      "title": "YD/T 4691-2024 隐私计算 联邦学习产品安全要求和测试方法",
+      "publisher": "全国标准信息公共服务平台",
+      "year": 2024,
+      "url": "https://std.samr.gov.cn/hb/search/stdHBDetailed?id=17C0C9DC10EBF07FE06397BE0A0AB070",
+      "locators": ["适用范围", "相近标准"],
+      "contribution": "隐私计算、联邦学习、安全多方计算和可信执行环境产品边界。"
+    },
+    {
+      "id": "GUIDE-TC260-LABEL-2026",
+      "type": "standards_guide",
+      "title": "网络安全标准实践指南——网络数据标签标识技术要求",
+      "publisher": "全国网络安全标准化技术委员会",
+      "year": 2026,
+      "url": "https://www.tc260.org.cn/portal/article/2/8decf5f653ed4fe8a6beedb73452421b",
+      "locators": ["术语和定义", "打标规则", "验标规则", "日志留存和安全防护要求"],
+      "contribution": "网络数据标签标识、打标、验标、日志留存和全周期全过程溯源。"
+    },
+    {
+      "id": "REPORT-CAICT-PRIVCOMP-2021",
+      "type": "research_report",
+      "title": "数据价值释放与隐私保护计算应用研究报告（2021年）",
+      "publisher": "中国信息通信研究院",
+      "year": 2021,
+      "url": "https://www.caict.ac.cn/kxyj/qwfb/ztbg/202111/P020211118547166022785.pdf",
+      "locators": ["隐私保护计算技术路线", "可信环境模式"],
+      "contribution": "隐私保护计算、机密计算、可信执行环境和数据可用不可见。"
+    },
+    {
+      "id": "PAPER-PRIVML-2020",
+      "type": "journal_article",
+      "title": "机器学习的隐私保护研究综述",
+      "publisher": "计算机研究与发展",
+      "year": 2020,
+      "url": "https://crad.ict.ac.cn/fileJSJYJYFZ/journal/article/jsjyjyfz/HTML/2020-2-346.shtml",
+      "locators": ["关键词", "2.2 隐私保护技术"],
+      "contribution": "隐私保护、差分隐私、同态加密、安全多方计算、联邦学习。"
+    },
+    {
+      "id": "PAPER-HOMOMORPHIC-2022",
+      "type": "journal_article",
+      "title": "同态加密在隐私计算中的应用综述",
+      "publisher": "信息通信技术与政策",
+      "year": 2022,
+      "url": "https://ictp.caict.ac.cn/CN/abstract/abstract934.shtml",
+      "locators": ["摘要", "关键词"],
+      "contribution": "同态加密、多方安全计算、联邦学习、隐私集合求交、隐私信息检索和隐私计算。"
+    },
+    {
+      "id": "PAPER-FLPRIV-2022",
+      "type": "journal_article",
+      "title": "联邦学习中的隐私保护技术研究综述",
+      "publisher": "计算机应用",
+      "year": 2022,
+      "url": "https://www.joca.cn/CN/10.11772/j.issn.1001-9081.2021122072",
+      "locators": ["摘要", "关键词"],
+      "contribution": "联邦学习隐私泄露、攻击模型、差分隐私、同态加密和安全多方计算。"
+    },
+    {
+      "id": "PAPER-SEARCHENC-2015",
+      "type": "journal_article",
+      "title": "可搜索加密技术研究综述",
+      "publisher": "软件学报",
+      "year": 2015,
+      "url": "https://www.jos.org.cn/jos/article/abstract/4700",
+      "locators": ["摘要", "可搜索加密分类"],
+      "contribution": "可搜索加密、对称可搜索加密、非对称可搜索加密和密文检索。"
+    },
+    {
+      "id": "PAPER-INTEGRITY-2017",
+      "type": "journal_article",
+      "title": "云存储完整性验证密码学技术研究进展",
+      "publisher": "信息安全学报",
+      "year": 2017,
+      "url": "https://jcs.iie.ac.cn/xxaqxb/ch/reader/view_abstract.aspx?file_no=20170303&flag=1",
+      "locators": ["摘要", "数据完整性验证阶段"],
+      "contribution": "云存储数据完整性验证、挑战/证明协议和可公开验证。"
+    },
+    {
+      "id": "PAPER-TEE-2025",
+      "type": "journal_article",
+      "title": "面向隐私计算的可信执行环境综述",
+      "publisher": "计算机应用",
+      "year": 2025,
+      "url": "https://www.joca.cn/CN/10.11772/j.issn.1001-9081.2024020222",
+      "locators": ["摘要", "关键词", "TEE 架构比较"],
+      "contribution": "隐私计算、可信执行环境、内存隔离、机密性、完整性和安全计算。"
+    },
+    {
+      "id": "PAPER-DATAPRIVACY-2022",
+      "type": "journal_article",
+      "title": "基于通用数据保护条例的数据隐私安全综述",
+      "publisher": "计算机研究与发展",
+      "year": 2022,
+      "url": "https://crad.ict.ac.cn/fileJSJYJYFZ/journal/article/jsjyjyfz/HTML/2022-10-2130.shtml",
+      "locators": ["关键词", "数据溯源与跨境数据流动相关综述"],
+      "contribution": "数据隐私保护、合规性、跨境数据流动、数据保护影响评估和数据溯源。"
+    },
+    {
+      "id": "ATTACH-ALG-2026",
+      "type": "user_supplied_article",
+      "title": "算法创新与企业全要素生产率提升——来自专利文本的经验证据",
+      "publisher": "数量经济技术经济研究",
+      "year": 2026,
+      "url": "https://doi.org/10.13653/j.cnki.jqte.20260515.001",
+      "local_reference": "算法创新与企业全要素生产率提升——来自专利文本的经验证据_蒋伟杰.pdf",
+      "locators": ["PDF第7页至第10页"],
+      "contribution": "自然语言主题定义、MacBERT/CoSENT、余弦相似度、类别不平衡和人工阈值校准。"
+    },
+    {
+      "id": "ATTACH-LABOR-2026",
+      "type": "user_supplied_article",
+      "title": "员工流失风险感知与企业劳动节约型创新",
+      "publisher": "南开管理评论",
+      "year": 2026,
+      "url": null,
+      "local_reference": "员工流失风险感知与企业劳动节约型创新_皮淑雯.pdf",
+      "locators": ["PDF第4页（期刊页116）"],
+      "contribution": "直接/间接判据、大模型标注、RoBERTa、8:1:1 数据拆分、人工多轮核验和独立测试。"
+    },
+    {
+      "id": "WIPO-IPC-2021",
+      "type": "classification_master_file",
+      "title": "WIPO IPC Scheme Master File 2021.01",
+      "publisher": "World Intellectual Property Organization",
+      "year": 2021,
+      "url": "https://www.wipo.int/ipc/itos4ipc/ITSupport_and_download_area/20210101/MasterFiles/ipc_scheme_20210101.zip",
+      "locators": ["EN_ipc_scheme_20210101.xml"],
+      "contribution": "2021 年申请专利的 IPC 号及官方英文标题。"
+    },
+    {
+      "id": "WIPO-IPC-2026",
+      "type": "classification_master_file",
+      "title": "WIPO IPC Scheme Master File 2026.01",
+      "publisher": "World Intellectual Property Organization",
+      "year": 2026,
+      "url": "https://www.wipo.int/ipc/itos4ipc/ITSupport_and_download_area/20260101/MasterFiles/ipc_scheme_20260101.zip",
+      "locators": ["EN_ipc_scheme_20260101.xml"],
+      "contribution": "现行 IPC 号、官方英文标题及当前网络安全号段。"
+    },
+    {
+      "id": "DATASET-SAMPLE-2021",
+      "type": "project_dataset_observation",
+      "title": "上市公司专利明细_2021年申请.csv 首段样本检查",
+      "publisher": "本项目",
+      "year": 2021,
+      "url": null,
+      "local_reference": "data/raw/上市公司专利明细_2021年申请.csv（Git ignored）",
+      "locators": ["前200000条记录，2026-07-11确定性顺序扫描"],
+      "contribution": "验证通用数据处理、数据库、容错和物理安全语境中的高频误判风险；不作为法律或技术定义来源。"
+    }
+  ]
+}

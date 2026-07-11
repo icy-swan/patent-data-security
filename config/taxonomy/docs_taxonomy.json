@@ -1,0 +1,230 @@
+{
+  "schema_version": "1.1.0",
+  "taxonomy_version": "1.1.0",
+  "name": "中国数据安全专利 DOCS 四级路由体系",
+  "docs_fields": ["abstract", "claim"],
+  "tier_definitions": {
+    "S": "直接指向数据安全保护对象或专门隐私增强技术的强召回信号。",
+    "W": "指向隐私、合规、完整性、备份审计或可信执行等数据安全支撑机制的弱召回信号。",
+    "R": "指向通用密码、认证、网络或应用安全的泛安全信号，仅用于扩大候选召回。",
+    "E": "未识别出 S/W/R 路由信号；E 是默认路由，不是最终不相关标签。"
+  },
+  "normalization": {
+    "unicode": "NFKC",
+    "casefold_latin": true,
+    "collapse_whitespace": true,
+    "preserve_sentence_boundaries": true,
+    "matching_order": "longest_keyword_first",
+    "context_window_chars": 48
+  },
+  "context_lexicons": [
+    {
+      "id": "CTX-DATA-OBJECT",
+      "kind": "protected_object",
+      "keywords": ["数据", "网络数据", "个人信息", "敏感个人信息", "重要数据", "核心数据", "隐私数据", "用户数据", "业务数据", "数据库", "数据集", "文件", "电子记录", "日志数据", "模型参数", "生物特征信息"],
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024", "PAPER-FLPRIV-2022"]
+    },
+    {
+      "id": "CTX-LIFECYCLE",
+      "kind": "data_lifecycle",
+      "keywords": ["收集", "采集", "存储", "使用", "加工", "处理", "传输", "提供", "共享", "公开", "流通", "交易", "出境", "删除", "销毁"],
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024", "STD-GB37988-2019"]
+    },
+    {
+      "id": "CTX-PROTECTION-ACTION",
+      "kind": "protection_action",
+      "keywords": ["保护", "防护", "加密", "解密", "脱敏", "去标识化", "匿名化", "备份", "恢复", "访问控制", "权限控制", "安全认证", "完整性验证", "审计", "隔离", "销毁", "安全删除", "溯源"],
+      "source_ids": ["LAW-PIPL-2021", "REG-NDS-2024", "LAW-CSL-2016-2025", "PAPER-INTEGRITY-2017"]
+    },
+    {
+      "id": "CTX-SECURITY-GOAL",
+      "kind": "security_goal",
+      "keywords": ["数据安全", "隐私保护", "保密性", "机密性", "完整性", "可用性", "不可抵赖", "可审计", "可追溯", "最小必要", "数据可用不可见"],
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REPORT-CAICT-PRIVCOMP-2021", "PAPER-TEE-2025"]
+    },
+    {
+      "id": "CTX-DATA-THREAT",
+      "kind": "threat_or_failure",
+      "keywords": ["未经授权访问", "越权访问", "泄露", "泄漏", "外泄", "窃取", "篡改", "破坏", "丢失", "非法获取", "非法利用", "滥用", "重识别", "推断攻击", "成员推断", "模型反演", "隐私攻击"],
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024", "PAPER-FLPRIV-2022", "PAPER-PRIVML-2020"]
+    }
+  ],
+  "diagnostic_patterns": [
+    {
+      "id": "DIAG-PHYSICAL-SAFETY",
+      "kind": "neighbor_domain",
+      "keywords": ["安全生产", "生产安全", "施工安全", "行车安全", "驾驶安全", "食品安全", "消防安全", "电气安全", "人身安全", "作业安全", "安全阀", "安全气囊", "安全带", "防爆装置"],
+      "source_ids": ["DATASET-SAMPLE-2021", "ATTACH-ALG-2026"],
+      "effect": "record_only_never_lower_route"
+    }
+  ],
+  "term_groups": [
+    {
+      "id": "DOCS-S-CORE",
+      "tier": "S",
+      "concept": "数据安全核心领域",
+      "keywords": ["数据安全", "网络数据安全", "数据安全防护", "数据安全保护", "个人信息安全", "敏感数据保护", "重要数据保护", "核心数据保护"],
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024", "STD-GB43697-2024"],
+      "match_policy": {"mode": "standalone_phrase"}
+    },
+    {
+      "id": "DOCS-S-LEAKAGE",
+      "tier": "S",
+      "concept": "数据泄露与外泄防护",
+      "keywords": ["数据防泄漏", "数据防泄露", "数据泄漏防护", "数据泄露防护", "数据泄露检测", "数据外泄防护", "隐私泄露防护", "敏感信息泄露检测"],
+      "source_ids": ["LAW-PIPL-2021", "REG-NDS-2024", "PAPER-FLPRIV-2022"],
+      "match_policy": {"mode": "standalone_phrase"}
+    },
+    {
+      "id": "DOCS-S-MASKING",
+      "tier": "S",
+      "concept": "数据脱敏",
+      "keywords": ["数据脱敏", "静态脱敏", "动态脱敏", "隐私数据脱敏", "敏感数据脱敏"],
+      "source_ids": ["LAW-PIPL-2021", "REG-NDS-2024", "STD-GB35273-2020"],
+      "match_policy": {"mode": "standalone_phrase"}
+    },
+    {
+      "id": "DOCS-S-WATERMARK-PROVENANCE",
+      "tier": "S",
+      "concept": "数据水印与数据溯源",
+      "keywords": ["数据水印", "数据库水印", "数据指纹", "数据溯源", "泄露溯源", "数据血缘"],
+      "source_ids": ["LAW-CSL-2016-2025", "GUIDE-TC260-LABEL-2026", "PAPER-DATAPRIVACY-2022"],
+      "match_policy": {"mode": "standalone_phrase"}
+    },
+    {
+      "id": "DOCS-S-PRIVACY-COMPUTING",
+      "tier": "S",
+      "concept": "隐私计算与隐私增强技术",
+      "keywords": ["隐私计算", "隐私保护计算", "隐私增强计算", "隐私保护机器学习", "数据可用不可见", "差分隐私", "本地差分隐私", "中心化差分隐私", "隐私预算", "privacy computing", "privacy-preserving computation", "differential privacy"],
+      "source_ids": ["REPORT-CAICT-PRIVCOMP-2021", "PAPER-PRIVML-2020", "PAPER-FLPRIV-2022", "PAPER-HOMOMORPHIC-2022"],
+      "match_policy": {"mode": "standalone_phrase"}
+    },
+    {
+      "id": "DOCS-S-FEDERATED-LEARNING",
+      "tier": "S",
+      "concept": "联邦学习",
+      "keywords": ["联邦学习", "联邦机器学习", "横向联邦学习", "纵向联邦学习", "联邦建模", "federated learning"],
+      "source_ids": ["PAPER-FLPRIV-2022", "PAPER-PRIVML-2020", "STD-YDT4691-2024"],
+      "match_policy": {"mode": "standalone_phrase"}
+    },
+    {
+      "id": "DOCS-S-HOMOMORPHIC-MPC",
+      "tier": "S",
+      "concept": "同态加密与安全多方计算",
+      "keywords": ["同态加密", "全同态加密", "部分同态加密", "密态计算", "密文计算", "可计算加密", "安全多方计算", "多方安全计算", "安全两方计算", "秘密共享计算", "homomorphic encryption", "secure multiparty computation", "secure multi-party computation"],
+      "source_ids": ["PAPER-PRIVML-2020", "PAPER-HOMOMORPHIC-2022", "STD-YDT4691-2024"],
+      "match_policy": {"mode": "standalone_phrase"}
+    },
+    {
+      "id": "DOCS-S-PRIVATE-PROTOCOLS",
+      "tier": "S",
+      "concept": "密文检索与隐私协议",
+      "keywords": ["可搜索加密", "密文检索", "密文搜索", "私有信息检索", "隐私信息检索", "私有集合求交", "隐私集合求交", "安全聚合", "隐私保护聚合", "secure aggregation", "private information retrieval", "private set intersection"],
+      "source_ids": ["PAPER-SEARCHENC-2015", "PAPER-HOMOMORPHIC-2022", "PAPER-FLPRIV-2022"],
+      "match_policy": {"mode": "standalone_phrase"}
+    },
+    {
+      "id": "DOCS-S-DATA-CONTROLS",
+      "tier": "S",
+      "concept": "专门数据保护控制",
+      "keywords": ["数据访问控制", "数据库访问控制", "数据权限控制", "数据完整性保护", "数据完整性验证", "数据分类分级", "敏感数据识别", "重要数据识别", "核心数据识别", "数据安全删除", "数据销毁"],
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024", "STD-GB41479-2022", "STD-GB43697-2024", "PAPER-INTEGRITY-2017"],
+      "match_policy": {"mode": "standalone_phrase"}
+    },
+    {
+      "id": "DOCS-W-PRIVACY",
+      "tier": "W",
+      "concept": "隐私与去标识化",
+      "keywords": ["个人信息保护", "敏感个人信息保护", "隐私保护", "数据隐私保护", "个人隐私保护", "隐私安全", "去标识化", "匿名化", "匿名化处理"],
+      "source_ids": ["LAW-PIPL-2021", "STD-GB35273-2020", "PAPER-PRIVML-2020", "PAPER-DATAPRIVACY-2022"],
+      "match_policy": {"mode": "standalone_phrase"}
+    },
+    {
+      "id": "DOCS-W-COMPLIANCE",
+      "tier": "W",
+      "concept": "数据合规与风险治理",
+      "keywords": ["数据合规", "个人信息合规", "数据安全风险评估", "个人信息保护影响评估", "数据安全审计", "数据安全监测预警", "数据安全应急处置"],
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024"],
+      "match_policy": {"mode": "standalone_phrase"}
+    },
+    {
+      "id": "DOCS-W-BACKUP-INTEGRITY-STORAGE",
+      "tier": "W",
+      "concept": "备份、完整性与安全存储",
+      "keywords": ["数据备份", "增量备份", "异地备份", "备份恢复", "灾难恢复", "容灾恢复", "数据完整性", "存储完整性验证", "云存储完整性验证", "数据持有性证明", "安全存储", "数据安全存储", "密文存储", "存储加密", "数据库加密", "加密存储"],
+      "source_ids": ["REG-NDS-2024", "LAW-CSL-2016-2025", "STD-GB41479-2022", "PAPER-INTEGRITY-2017"],
+      "match_policy": {"mode": "standalone_phrase"}
+    },
+    {
+      "id": "DOCS-W-AUDIT-TEE",
+      "tier": "W",
+      "concept": "安全审计与可信执行",
+      "keywords": ["安全审计", "数据库审计", "日志审计", "可信执行环境", "安全飞地", "机密计算", "内存隔离", "内存加密", "远程证明", "可信计算", "trusted execution environment", "secure enclave", "confidential computing", "Intel SGX"],
+      "source_ids": ["LAW-CSL-2016-2025", "REG-NDS-2024", "REPORT-CAICT-PRIVCOMP-2021", "PAPER-TEE-2025"],
+      "match_policy": {"mode": "standalone_phrase"}
+    },
+    {
+      "id": "DOCS-W-ZERO-KNOWLEDGE",
+      "tier": "W",
+      "concept": "零知识与可验证计算",
+      "keywords": ["零知识证明", "非交互零知识证明", "可验证计算", "盲签名", "承诺方案", "zero-knowledge proof"],
+      "source_ids": ["PAPER-HOMOMORPHIC-2022", "REPORT-CAICT-PRIVCOMP-2021"],
+      "match_policy": {"mode": "cooccurrence", "required_any": ["CTX-DATA-OBJECT", "CTX-SECURITY-GOAL"]}
+    },
+    {
+      "id": "DOCS-R-CRYPTO",
+      "tier": "R",
+      "concept": "通用密码机制",
+      "keywords": ["加密", "解密", "密文", "密码算法", "对称加密", "非对称加密", "公钥加密", "密钥管理", "密钥协商", "密钥交换", "密钥分发", "哈希", "数字签名", "电子签名", "消息认证码", "数字证书"],
+      "source_ids": ["LAW-CRYPT-2019", "REG-NDS-2024", "WIPO-IPC-2026"],
+      "match_policy": {"mode": "candidate_only"}
+    },
+    {
+      "id": "DOCS-R-AUTH",
+      "tier": "R",
+      "concept": "通用认证与授权",
+      "keywords": ["身份认证", "身份鉴别", "用户认证", "安全认证", "访问控制", "权限管理", "授权管理", "越权检测", "单点登录", "多因素认证", "生物特征识别"],
+      "source_ids": ["REG-NDS-2024", "LAW-PIPL-2021", "WIPO-IPC-2026"],
+      "match_policy": {"mode": "candidate_only"}
+    },
+    {
+      "id": "DOCS-R-NETWORK-APP",
+      "tier": "R",
+      "concept": "网络、应用与云安全",
+      "keywords": ["网络安全", "通信安全", "系统安全", "应用安全", "软件安全", "云安全", "物联网安全", "终端安全", "安全通信", "安全信道", "入侵检测", "入侵防御", "恶意代码", "病毒检测", "漏洞检测", "漏洞修复", "攻击检测", "防火墙", "安全态势感知", "虚拟专用网络"],
+      "source_ids": ["LAW-CSL-2016-2025", "LAW-DSL-2021", "WIPO-IPC-2026"],
+      "match_policy": {"mode": "candidate_only"}
+    },
+    {
+      "id": "DOCS-R-NEIGHBOR",
+      "tier": "R",
+      "concept": "邻近安全应用",
+      "keywords": ["区块链", "分布式账本", "智能合约", "版权保护", "数字版权管理", "支付安全", "交易认证", "反欺诈", "内容保护", "数字水印"],
+      "source_ids": ["PAPER-DATAPRIVACY-2022", "WIPO-IPC-2026", "DATASET-SAMPLE-2021"],
+      "match_policy": {"mode": "candidate_only"}
+    },
+    {
+      "id": "DOCS-E-GENERIC-DATA",
+      "tier": "E",
+      "concept": "不能单独形成候选的通用数据词",
+      "keywords": ["数据", "信息", "数据库", "数据集", "数据记录", "数据处理", "数据分析", "数据采集", "数据存储", "数据传输", "大数据", "云计算", "物联网"],
+      "source_ids": ["LAW-PIPL-2021", "STD-GB41479-2022", "DATASET-SAMPLE-2021"],
+      "match_policy": {"mode": "no_positive_evidence_alone"}
+    },
+    {
+      "id": "DOCS-E-GENERIC-SAFETY",
+      "tier": "E",
+      "concept": "不能单独形成候选的通用安全词",
+      "keywords": ["安全", "保护", "风险", "认证", "监测"],
+      "source_ids": ["DATASET-SAMPLE-2021", "ATTACH-ALG-2026"],
+      "match_policy": {"mode": "no_positive_evidence_alone"}
+    }
+  ],
+  "routing_rules": [
+    {"id": "DOCS-ROUTE-001", "rule": "S/W/R 取实际命中的最高层级，层级顺序为 S、W、R、E。"},
+    {"id": "DOCS-ROUTE-002", "rule": "cooccurrence 词项只有在同句或左右 48 字窗口命中 required_any 上下文时才成立。"},
+    {"id": "DOCS-ROUTE-003", "rule": "no_positive_evidence_alone 词项不创建候选，只用于解释默认 E。"},
+    {"id": "DOCS-ROUTE-004", "rule": "诊断场景只记录，不能降低、覆盖或排除 S/W/R 命中。"},
+    {"id": "DOCS-ROUTE-005", "rule": "E 表示未路由，仍需分层抽样进入模型与人工复核以估计漏召。"}
+  ]
+}

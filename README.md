@@ -12,6 +12,8 @@ S/W/R/E 是召回路由，不是最终标签。S/W/R 唯一专利全量进入模
 
 ## 方法文档
 
+- `docs/patent_identification_methodology.md`：从关键词召回、GLM-5.2 初分类、人工 Gold、Alpha
+  Silver 构建，到 RoBERTa/SFT 模型竞赛和 E 层认证的完整研究方法；
 - `specs/001-docs-ipc-taxonomy/spec.md`：DOCS/IPC 分层定义与来源要求；
 - `specs/001-docs-ipc-taxonomy/research.md`：法规、标准、论文和附件方法研究；
 - `specs/002-hybrid-classifier/spec.md`：逐条火山方舟分类、抽样、恢复和进度契约；

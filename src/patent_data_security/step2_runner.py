@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import csv
+import fcntl
 import hashlib
 import json
 import os
 import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -252,51 +254,58 @@ def run_classification_tasks(
 
     if max_attempts < 1:
         raise ValueError("max_attempts must be at least 1")
+    if retry_delay_seconds < 0:
+        raise ValueError("retry_delay_seconds must be non-negative")
     if concurrency < 1:
         raise ValueError("concurrency must be at least 1")
     stop_requested = stop_requested or (lambda: False)
-    connection = _connect(paths.database)
-    _initialize_database(connection)
-    connection.execute("UPDATE tasks SET status='pending' WHERE status='running'")
-    _write_meta_if_absent(connection, "run_started_at", _now())
-    connection.commit()
-    export_results(paths, connection=connection)
+    with _exclusive_runner_lock(paths.database):
+        connection = _connect(paths.database)
+        try:
+            _initialize_database(connection)
+            connection.execute("UPDATE tasks SET status='pending' WHERE status='running'")
+            _write_meta_if_absent(connection, "run_started_at", _now())
+            connection.commit()
+            export_results(paths, connection=connection)
 
-    if concurrency == 1:
-        _run_serial(
-            paths,
-            client,
-            connection,
-            max_attempts=max_attempts,
-            retry_delay_seconds=retry_delay_seconds,
-            stop_requested=stop_requested,
-            progress_callback=progress_callback,
-        )
-    else:
-        _run_concurrent(
-            paths,
-            client,
-            connection,
-            max_attempts=max_attempts,
-            concurrency=concurrency,
-            stop_requested=stop_requested,
-            progress_callback=progress_callback,
-        )
+            if concurrency == 1:
+                _run_serial(
+                    paths,
+                    client,
+                    connection,
+                    max_attempts=max_attempts,
+                    retry_delay_seconds=retry_delay_seconds,
+                    stop_requested=stop_requested,
+                    progress_callback=progress_callback,
+                )
+            else:
+                _run_concurrent(
+                    paths,
+                    client,
+                    connection,
+                    max_attempts=max_attempts,
+                    retry_delay_seconds=retry_delay_seconds,
+                    concurrency=concurrency,
+                    stop_requested=stop_requested,
+                    progress_callback=progress_callback,
+                )
 
-    progress = _progress_from_database(
-        paths, model=client.model, connection=connection, concurrency=concurrency
-    )
-    progress["stopped_by_request"] = bool(stop_requested())
-    _write_progress(paths, progress)
-    export_results(paths, connection=connection)
-    connection.close()
-    return progress
+            progress = _progress_from_database(
+                paths, model=client.model, connection=connection, concurrency=concurrency
+            )
+            progress["stopped_by_request"] = bool(stop_requested())
+            _write_progress(paths, progress)
+            export_results(paths, connection=connection)
+            return progress
+        finally:
+            connection.close()
 
 
 def _claim_next_task(
     connection: sqlite3.Connection,
     client: VolcengineArkClient,
     max_attempts: int,
+    excluded_task_ids: set[str] | None = None,
 ) -> tuple[sqlite3.Row, int] | None:
     """Atomically pick the next pending task and mark it running. Main-thread only.
 
@@ -304,15 +313,23 @@ def _claim_next_task(
     connection never hand out the same task twice, since the query only sees ``pending`` rows.
     """
 
+    excluded_task_ids = excluded_task_ids or set()
+    exclusion_clause = ""
+    parameters: list[Any] = [max_attempts]
+    if excluded_task_ids:
+        placeholders = ",".join("?" for _ in excluded_task_ids)
+        exclusion_clause = f" AND task_id NOT IN ({placeholders})"
+        parameters.extend(sorted(excluded_task_ids))
     task = connection.execute(
-        """
+        f"""
         SELECT * FROM tasks
         WHERE status='pending' AND attempts < ?
+        {exclusion_clause}
         ORDER BY CASE keyword_level WHEN 'S' THEN 0 WHEN 'W' THEN 1
                  WHEN 'R' THEN 2 ELSE 3 END, source_row_number
         LIMIT 1
         """,
-        (max_attempts,),
+        parameters,
     ).fetchone()
     if task is None:
         return None
@@ -390,6 +407,7 @@ def _run_concurrent(
     connection: sqlite3.Connection,
     *,
     max_attempts: int,
+    retry_delay_seconds: float,
     concurrency: int,
     stop_requested: Callable[[], bool],
     progress_callback: Callable[[dict[str, Any]], None] | None,
@@ -403,30 +421,75 @@ def _run_concurrent(
             return error, time.monotonic() - started
 
     in_flight: dict[Any, tuple[sqlite3.Row, int]] = {}
+    retry_not_before: dict[str, float] = {}
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         while True:
+            now = time.monotonic()
+            retry_not_before = {
+                task_id: deadline
+                for task_id, deadline in retry_not_before.items()
+                if deadline > now
+            }
             while not stop_requested() and len(in_flight) < concurrency:
-                claimed = _claim_next_task(connection, client, max_attempts)
+                claimed = _claim_next_task(
+                    connection,
+                    client,
+                    max_attempts,
+                    excluded_task_ids=set(retry_not_before),
+                )
                 if claimed is None:
                     break
                 task, attempts = claimed
                 future = pool.submit(classify, task)
                 in_flight[future] = (task, attempts)
             if not in_flight:
-                break
-            done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+                if stop_requested() or not retry_not_before:
+                    break
+                _wait_until_next_retry(retry_not_before, stop_requested)
+                continue
+            retry_timeout = _seconds_until_next_retry(retry_not_before)
+            done, _ = wait(
+                in_flight,
+                timeout=retry_timeout,
+                return_when=FIRST_COMPLETED,
+            )
+            if not done:
+                continue
             for future in done:
                 task, attempts = in_flight.pop(future)
                 outcome, elapsed = future.result()
-                _persist_task_outcome(
+                final_status = _persist_task_outcome(
                     paths, connection, task, attempts, max_attempts, outcome, elapsed
                 )
+                if final_status == "pending" and retry_delay_seconds:
+                    retry_not_before[task["task_id"]] = (
+                        time.monotonic() + retry_delay_seconds
+                    )
             progress = _progress_from_database(
                 paths, model=client.model, connection=connection, concurrency=concurrency
             )
             _write_progress(paths, progress)
             if progress_callback:
                 progress_callback(progress)
+
+
+def _seconds_until_next_retry(retry_not_before: dict[str, float]) -> float | None:
+    if not retry_not_before:
+        return None
+    return max(0.0, min(retry_not_before.values()) - time.monotonic())
+
+
+def _wait_until_next_retry(
+    retry_not_before: dict[str, float],
+    stop_requested: Callable[[], bool],
+) -> None:
+    """Wait interruptibly so a stop request is not delayed by a long retry interval."""
+
+    while not stop_requested():
+        remaining = _seconds_until_next_retry(retry_not_before)
+        if remaining is None or remaining <= 0:
+            return
+        time.sleep(min(remaining, 0.1))
 
 
 def read_progress(paths: Step2Paths) -> dict[str, Any]:
@@ -450,6 +513,35 @@ def export_results(paths: Step2Paths, *, connection: sqlite3.Connection | None =
     os.replace(temporary, paths.results)
     if own_connection:
         connection.close()
+
+
+@contextmanager
+def _exclusive_runner_lock(database: Path) -> Iterator[None]:
+    """Prevent two processes from issuing requests for the same Step 2 database."""
+
+    lock_path = database.with_name(f"{database.name}.run.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            lock_file.seek(0)
+            owner = lock_file.read().strip()
+            owner_text = f" (PID {owner})" if owner else ""
+            raise RuntimeError(
+                f"A Step 2 runner is already active for {database}{owner_text}"
+            ) from None
+        try:
+            lock_file.seek(0)
+            lock_file.truncate()
+            lock_file.write(f"{os.getpid()}\n")
+            lock_file.flush()
+            yield
+        finally:
+            lock_file.seek(0)
+            lock_file.truncate()
+            lock_file.flush()
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _connect(path: Path) -> sqlite3.Connection:

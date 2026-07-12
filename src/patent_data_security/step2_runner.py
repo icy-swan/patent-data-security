@@ -9,6 +9,7 @@ import os
 import sqlite3
 import time
 from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -238,13 +239,21 @@ def run_classification_tasks(
     *,
     max_attempts: int = 3,
     retry_delay_seconds: float = 2,
+    concurrency: int = 1,
     stop_requested: Callable[[], bool] | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    """Continuously request one patent at a time; safe to stop and resume."""
+    """Request classifications with up to ``concurrency`` in-flight; safe to stop and resume.
+
+    API requests run in a thread pool because the bottleneck is network I/O. Every SQLite
+    read and write stays on the calling thread, since a single connection is not safe to
+    share across threads.
+    """
 
     if max_attempts < 1:
         raise ValueError("max_attempts must be at least 1")
+    if concurrency < 1:
+        raise ValueError("concurrency must be at least 1")
     stop_requested = stop_requested or (lambda: False)
     connection = _connect(paths.database)
     _initialize_database(connection)
@@ -253,42 +262,120 @@ def run_classification_tasks(
     connection.commit()
     export_results(paths, connection=connection)
 
-    while not stop_requested():
-        task = connection.execute(
-            """
-            SELECT * FROM tasks
-            WHERE status='pending' AND attempts < ?
-            ORDER BY CASE keyword_level WHEN 'S' THEN 0 WHEN 'W' THEN 1
-                     WHEN 'R' THEN 2 ELSE 3 END, source_row_number
-            LIMIT 1
-            """,
-            (max_attempts,),
-        ).fetchone()
-        if task is None:
-            break
-
-        attempts = int(task["attempts"]) + 1
-        connection.execute(
-            "UPDATE tasks SET status='running', attempts=?, requested_model=?, updated_at=? "
-            "WHERE task_id=?",
-            (attempts, client.model, _now(), task["task_id"]),
+    if concurrency == 1:
+        _run_serial(
+            paths,
+            client,
+            connection,
+            max_attempts=max_attempts,
+            retry_delay_seconds=retry_delay_seconds,
+            stop_requested=stop_requested,
+            progress_callback=progress_callback,
         )
-        connection.commit()
-        started = time.monotonic()
-        final_status = "pending"
-        try:
-            response = client.classify(json.loads(task["payload_json"]))
-            elapsed = response.elapsed_seconds
-            _save_success(connection, task["task_id"], response, elapsed)
-            final_status = "succeeded"
-        except Exception as error:  # noqa: BLE001 - failures are persisted for later review
-            elapsed = time.monotonic() - started
-            final_status = "failed" if attempts >= max_attempts else "pending"
-            _save_failure(connection, task["task_id"], error, elapsed, final_status)
-        connection.commit()
+    else:
+        _run_concurrent(
+            paths,
+            client,
+            connection,
+            max_attempts=max_attempts,
+            concurrency=concurrency,
+            stop_requested=stop_requested,
+            progress_callback=progress_callback,
+        )
 
-        if final_status in {"succeeded", "failed"}:
-            _append_result(paths, connection, task["task_id"])
+    progress = _progress_from_database(
+        paths, model=client.model, connection=connection, concurrency=concurrency
+    )
+    progress["stopped_by_request"] = bool(stop_requested())
+    _write_progress(paths, progress)
+    export_results(paths, connection=connection)
+    connection.close()
+    return progress
+
+
+def _claim_next_task(
+    connection: sqlite3.Connection,
+    client: VolcengineArkClient,
+    max_attempts: int,
+) -> tuple[sqlite3.Row, int] | None:
+    """Atomically pick the next pending task and mark it running. Main-thread only.
+
+    Marking the task ``running`` before returning means concurrent callers on the same
+    connection never hand out the same task twice, since the query only sees ``pending`` rows.
+    """
+
+    task = connection.execute(
+        """
+        SELECT * FROM tasks
+        WHERE status='pending' AND attempts < ?
+        ORDER BY CASE keyword_level WHEN 'S' THEN 0 WHEN 'W' THEN 1
+                 WHEN 'R' THEN 2 ELSE 3 END, source_row_number
+        LIMIT 1
+        """,
+        (max_attempts,),
+    ).fetchone()
+    if task is None:
+        return None
+    attempts = int(task["attempts"]) + 1
+    connection.execute(
+        "UPDATE tasks SET status='running', attempts=?, requested_model=?, updated_at=? "
+        "WHERE task_id=?",
+        (attempts, client.model, _now(), task["task_id"]),
+    )
+    connection.commit()
+    return task, attempts
+
+
+def _persist_task_outcome(
+    paths: Step2Paths,
+    connection: sqlite3.Connection,
+    task: sqlite3.Row,
+    attempts: int,
+    max_attempts: int,
+    outcome: ArkClassificationResponse | Exception,
+    elapsed: float,
+) -> str:
+    """Write one task's result to SQLite and the results CSV. Main-thread only."""
+
+    if isinstance(outcome, Exception):
+        final_status = "failed" if attempts >= max_attempts else "pending"
+        _save_failure(connection, task["task_id"], outcome, elapsed, final_status)
+    else:
+        _save_success(connection, task["task_id"], outcome, elapsed)
+        final_status = "succeeded"
+    connection.commit()
+    if final_status in {"succeeded", "failed"}:
+        _append_result(paths, connection, task["task_id"])
+    return final_status
+
+
+def _run_serial(
+    paths: Step2Paths,
+    client: VolcengineArkClient,
+    connection: sqlite3.Connection,
+    *,
+    max_attempts: int,
+    retry_delay_seconds: float,
+    stop_requested: Callable[[], bool],
+    progress_callback: Callable[[dict[str, Any]], None] | None,
+) -> None:
+    while not stop_requested():
+        claimed = _claim_next_task(connection, client, max_attempts)
+        if claimed is None:
+            break
+        task, attempts = claimed
+        started = time.monotonic()
+        try:
+            outcome: ArkClassificationResponse | Exception = client.classify(
+                json.loads(task["payload_json"])
+            )
+            elapsed = outcome.elapsed_seconds
+        except Exception as error:  # noqa: BLE001 - failures are persisted for later review
+            outcome = error
+            elapsed = time.monotonic() - started
+        final_status = _persist_task_outcome(
+            paths, connection, task, attempts, max_attempts, outcome, elapsed
+        )
         progress = _progress_from_database(paths, model=client.model, connection=connection)
         _write_progress(paths, progress)
         if progress_callback:
@@ -296,12 +383,50 @@ def run_classification_tasks(
         if final_status == "pending" and retry_delay_seconds:
             time.sleep(retry_delay_seconds)
 
-    progress = _progress_from_database(paths, model=client.model, connection=connection)
-    progress["stopped_by_request"] = bool(stop_requested())
-    _write_progress(paths, progress)
-    export_results(paths, connection=connection)
-    connection.close()
-    return progress
+
+def _run_concurrent(
+    paths: Step2Paths,
+    client: VolcengineArkClient,
+    connection: sqlite3.Connection,
+    *,
+    max_attempts: int,
+    concurrency: int,
+    stop_requested: Callable[[], bool],
+    progress_callback: Callable[[dict[str, Any]], None] | None,
+) -> None:
+    def classify(task: sqlite3.Row) -> tuple[ArkClassificationResponse | Exception, float]:
+        started = time.monotonic()
+        try:
+            response = client.classify(json.loads(task["payload_json"]))
+            return response, response.elapsed_seconds
+        except Exception as error:  # noqa: BLE001 - persisted for later review
+            return error, time.monotonic() - started
+
+    in_flight: dict[Any, tuple[sqlite3.Row, int]] = {}
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        while True:
+            while not stop_requested() and len(in_flight) < concurrency:
+                claimed = _claim_next_task(connection, client, max_attempts)
+                if claimed is None:
+                    break
+                task, attempts = claimed
+                future = pool.submit(classify, task)
+                in_flight[future] = (task, attempts)
+            if not in_flight:
+                break
+            done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+            for future in done:
+                task, attempts = in_flight.pop(future)
+                outcome, elapsed = future.result()
+                _persist_task_outcome(
+                    paths, connection, task, attempts, max_attempts, outcome, elapsed
+                )
+            progress = _progress_from_database(
+                paths, model=client.model, connection=connection, concurrency=concurrency
+            )
+            _write_progress(paths, progress)
+            if progress_callback:
+                progress_callback(progress)
 
 
 def read_progress(paths: Step2Paths) -> dict[str, Any]:
@@ -453,6 +578,7 @@ def _progress_from_database(
     *,
     model: str,
     connection: sqlite3.Connection | None = None,
+    concurrency: int = 1,
 ) -> dict[str, Any]:
     own_connection = connection is None
     connection = connection or _connect(paths.database)
@@ -474,6 +600,9 @@ def _progress_from_database(
     ).fetchone()
     average_request = timing["elapsed"] / timing["attempts"] if timing["attempts"] else 0
     average_task = float(timing["avg_task"] or average_request)
+    # Requests run in parallel, so wall-clock ETA is the serial estimate divided by concurrency.
+    workers = max(concurrency, 1)
+    eta_seconds = round(pending * average_task / workers, 3) if average_task else None
     progress = {
         "dataset_id": dataset_row[0] if dataset_row else "",
         "database": str(paths.database),
@@ -491,10 +620,11 @@ def _progress_from_database(
         "succeeded": counts.get("succeeded", 0),
         "failed": counts.get("failed", 0),
         "pending": pending,
+        "concurrency": workers,
         "progress_percent": round(completed / total * 100, 4) if total else 0,
         "average_request_seconds": round(average_request, 3),
         "average_completed_task_seconds": round(average_task, 3),
-        "eta_seconds": round(pending * average_task, 3) if average_task else None,
+        "eta_seconds": eta_seconds,
         "updated_at": _now(),
     }
     if own_connection:

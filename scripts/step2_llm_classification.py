@@ -40,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
             command.add_argument("--timeout-seconds", type=float, default=180)
             command.add_argument("--max-attempts", type=int, default=3)
             command.add_argument("--retry-delay-seconds", type=float, default=2)
+            command.add_argument("--concurrency", type=int, default=1)
 
     status = subparsers.add_parser("status")
     status.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "data" / "step2")
@@ -117,6 +118,7 @@ def _prepare_or_run(args: argparse.Namespace) -> int:
                 client,
                 max_attempts=args.max_attempts,
                 retry_delay_seconds=args.retry_delay_seconds,
+                concurrency=args.concurrency,
                 stop_requested=lambda: STOP_REQUESTED,
                 progress_callback=_print_progress,
             )
@@ -178,6 +180,8 @@ def _forward_run_arguments(args: argparse.Namespace) -> list[str]:
         str(args.max_attempts),
         "--retry-delay-seconds",
         str(args.retry_delay_seconds),
+        "--concurrency",
+        str(args.concurrency),
     ]
     for path in args.input or []:
         values.extend(("--input", str(path)))
@@ -230,8 +234,8 @@ def _print_progress(progress: dict[str, Any]) -> None:
     eta_text = "unknown" if eta is None else f"{eta / 3600:.2f}h"
     print(
         f"model={progress['model']} completed={progress['completed']}/{progress['total']} "
-        f"({progress['progress_percent']:.2f}%) avg={progress['average_request_seconds']:.2f}s "
-        f"eta={eta_text}",
+        f"({progress['progress_percent']:.2f}%) concurrency={progress.get('concurrency', 1)} "
+        f"avg={progress['average_request_seconds']:.2f}s eta={eta_text}",
         flush=True,
     )
 

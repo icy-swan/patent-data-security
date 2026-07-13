@@ -1,0 +1,48 @@
+{"kind":"deck","id":"pr/dnk9qq","name":"Deck"}
+{"kind":"layout","layoutId":"7e390c06-73e4-42ad-8e1b-7253861a598e","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"8f49e7c8-9864-4cc4-880f-d6aa2effd06a","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/sv1zkk","slide":1,"title":"数据安全专利识别：从关键词召回到最终数据集","textShapes":27}
+{"kind":"textbox","id":"sh/y9onmpgv","slide":1,"name":"slide-title","text":"数据安全专利识别：从关键词召回到最终数据集","textPreview":"数据安全专利识别：从关键词召回到最终数据集","textChars":21,"textLines":1,"bbox":[60,34,1160,54]}
+{"kind":"textbox","id":"sh/lczmx4zm","slide":1,"name":"slide-subtitle","text":"召回 → 初分类 → 人工真值 → 训练 → 独立测试 → E 层认证","textPreview":"召回 → 初分类 → 人工真值 → 训练 → 独立测试 → E 层认证","textChars":35,"textLines":1,"bbox":[60,96,1160,30]}
+{"kind":"shape","id":"sh/0bq5ozy1","slide":1,"name":"stage-1-box","bbox":[60,160,270,155]}
+{"kind":"textbox","id":"sh/neh4zuhs","slide":1,"name":"stage-1-number","text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[80,180,40,40]}
+{"kind":"textbox","id":"sh/md8nq9g7","slide":1,"name":"stage-1-title","text":"原始专利","textPreview":"原始专利","textChars":4,"textLines":1,"bbox":[132,183,178,35]}
+{"kind":"textbox","id":"sh/90zm14zi","slide":1,"name":"stage-1-body","text":"多年度 CSV\n按申请号去重","textPreview":"多年度 CSV | 按申请号去重","textChars":14,"textLines":2,"bbox":[82,238,226,58]}
+{"kind":"shape","id":"sh/8fq5szyx","slide":1,"name":"stage-2-box","bbox":[357,160,270,155]}
+{"kind":"textbox","id":"sh/3id4nah8","slide":1,"name":"stage-2-number","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[377,180,40,40]}
+{"kind":"textbox","id":"sh/2h43e50n","slide":1,"name":"stage-2-title","text":"关键词召回","textPreview":"关键词召回","textChars":5,"textLines":1,"bbox":[429,183,178,35]}
+{"kind":"textbox","id":"sh/4v65cfut","slide":1,"name":"stage-2-body","text":"摘要 + 主权项\nS/W/R 全量；E 抽 2%","textPreview":"摘要 + 主权项 | S/W/R 全量；E 抽 2%","textChars":24,"textLines":2,"bbox":[379,238,226,58]}
+{"kind":"shape","id":"sh/5wf6lkve","slide":1,"name":"stage-3-box","bbox":[654,160,270,155]}
+{"kind":"textbox","id":"sh/it4na5w3","slide":1,"name":"stage-3-number","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[674,180,40,40]}
+{"kind":"textbox","id":"sh/3udojado","slide":1,"name":"stage-3-title","text":"G0 初分类","textPreview":"G0 初分类","textChars":6,"textLines":1,"bbox":[726,183,178,35]}
+{"kind":"textbox","id":"sh/sz65gzu5","slide":1,"name":"stage-3-body","text":"GLM-5.2 独立判断\n输出类别 1 / 2 / 3","textPreview":"GLM-5.2 独立判断 | 输出类别 1 / 2 / 3","textChars":27,"textLines":2,"bbox":[676,238,226,58]}
+{"kind":"shape","id":"sh/d0f6p4vq","slide":1,"name":"stage-4-box","bbox":[951,160,270,155]}
+{"kind":"textbox","id":"sh/qxonepcz","slide":1,"name":"stage-4-number","text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[971,180,40,40]}
+{"kind":"textbox","id":"sh/ryxonudk","slide":1,"name":"stage-4-title","text":"人工 Gold","textPreview":"人工 Gold","textChars":7,"textLines":1,"bbox":[1023,183,178,35]}
+{"kind":"textbox","id":"sh/83m54ve1","slide":1,"name":"stage-4-body","text":"约 2,000 件\n双人盲标 + 冲突仲裁","textPreview":"约 2,000 件 | 双人盲标 + 冲突仲裁","textChars":21,"textLines":2,"bbox":[973,238,226,58]}
+{"kind":"shape","id":"sh/t4v6d0v6","slide":1,"name":"stage-5-box","bbox":[951,420,270,155]}
+{"kind":"textbox","id":"sh/po3ulsjy","slide":1,"name":"stage-5-number","text":"5","textPreview":"5","textChars":1,"textLines":1,"bbox":[971,440,40,40]}
+{"kind":"textbox","id":"sh/onudsn2d","slide":1,"name":"stage-5-title","text":"数据划分","textPreview":"数据划分","textChars":4,"textLines":1,"bbox":[1023,443,178,35]}
+{"kind":"textbox","id":"sh/nmlcj21s","slide":1,"name":"stage-5-body","text":"Train 1,000｜Dev 400\nLocked Test 600","textPreview":"Train 1,000｜Dev 400 | Locked Test 600","textChars":35,"textLines":2,"bbox":[973,498,226,58]}
+{"kind":"shape","id":"sh/2lsvqxk7","slide":1,"name":"stage-6-box","bbox":[654,420,270,155]}
+{"kind":"textbox","id":"sh/xc3upcju","slide":1,"name":"stage-6-number","text":"6","textPreview":"6","textChars":1,"textLines":1,"bbox":[674,440,40,40]}
+{"kind":"textbox","id":"sh/cbudw72p","slide":1,"name":"stage-6-title","text":"Silver 与训练","textPreview":"Silver 与训练","textChars":10,"textLines":1,"bbox":[726,443,178,35]}
+{"kind":"textbox","id":"sh/bqlcn214","slide":1,"name":"stage-6-body","text":"Alpha 校准 G0 标签\n训练 R / L 候选模型","textPreview":"Alpha 校准 G0 标签 | 训练 R / L 候选模型","textChars":28,"textLines":2,"bbox":[676,498,226,58]}
+{"kind":"shape","id":"sh/apcvuxkj","slide":1,"name":"stage-7-box","bbox":[357,420,270,155]}
+{"kind":"textbox","id":"sh/lgnutcj6","slide":1,"name":"stage-7-number","text":"7","textPreview":"7","textChars":1,"textLines":1,"bbox":[377,440,40,40]}
+{"kind":"textbox","id":"sh/kfed072l","slide":1,"name":"stage-7-title","text":"最终模型竞赛","textPreview":"最终模型竞赛","textChars":6,"textLines":1,"bbox":[429,443,178,35]}
+{"kind":"textbox","id":"sh/ilore903","slide":1,"name":"stage-7-body","text":"同一 Locked Test\nPrecision 达标后选 Recall","textPreview":"同一 Locked Test | Precision 达标后选 Recall","textChars":36,"textLines":2,"bbox":[379,498,226,58]}
+{"kind":"shape","id":"sh/3mxsneho","slide":1,"name":"stage-8-box","bbox":[60,420,270,155]}
+{"kind":"textbox","id":"sh/4nq9gji9","slide":1,"name":"stage-8-number","text":"8","textPreview":"8","textChars":1,"textLines":1,"bbox":[80,440,40,40]}
+{"kind":"textbox","id":"sh/5ozapozu","slide":1,"name":"stage-8-title","text":"认证与全量识别","textPreview":"认证与全量识别","textChars":7,"textLines":1,"bbox":[132,443,178,35]}
+{"kind":"textbox","id":"sh/qp8rit0z","slide":1,"name":"stage-8-body","text":"E 层排除认证\n输出最终专利数据集","textPreview":"E 层排除认证 | 输出最终专利数据集","textChars":17,"textLines":2,"bbox":[82,498,226,58]}
+{"kind":"shape","id":"sh/rqhsryhk","slide":1,"bbox":[330,237.5,27,0]}
+{"kind":"shape","id":"sh/srq9k3i5","slide":1,"bbox":[627,237.5,27,0]}
+{"kind":"shape","id":"sh/dszatozq","slide":1,"bbox":[924,237.5,27,0]}
+{"kind":"shape","id":"sh/et8rmt0b","slide":1,"bbox":[1086,315,0,105]}
+{"kind":"shape","id":"sh/fu1svyhw","slide":1,"bbox":[924,497.5,27,0]}
+{"kind":"shape","id":"sh/naxsfy90","slide":1,"bbox":[627,497.5,27,0]}
+{"kind":"shape","id":"sh/m9or6tsf","slide":1,"bbox":[330,497.5,27,0]}
+{"kind":"shape","id":"sh/9cfah8r6","slide":1,"name":"footer-divider","bbox":[60,627,1160,0]}
+{"kind":"textbox","id":"sh/ob6983al","slide":1,"name":"footer-note","text":"关键隔离：关键词层级不进入 G0 提示词；Locked Test 不参与训练、调参或 Silver 构建。","textPreview":"关键隔离：关键词层级不进入 G0 提示词；Locked Test 不参与训练、调参或 Silver 构建。","textChars":53,"textLines":1,"bbox":[60,646,1160,27]}
+{"kind":"notes","id":"nt/sv1zkk","slide":1,"text":""}

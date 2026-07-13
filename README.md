@@ -32,12 +32,13 @@ cp .env.example .env
 
 ## 分步执行结构
 
-当前只保留两个步骤：
+当前保留三个步骤：
 
 | 步骤 | 脚本 | 默认产物 | 是否调用外部 LLM |
 | --- | --- | --- | --- |
 | 1 | `scripts/step1_keyword_extraction.py` | `data/step1/` 下的 S/W/R/E 四个关键词文件及汇总 | 否 |
 | 2 | `scripts/step2_llm_classification.py` | `data/step2/` 下的 SQLite 状态、逐条结果和进度 | `run/start` 会调用 |
+| 3 | `scripts/step3_gold_sampling.py` | `data/step3/` 下的 Gold 抽样审计、盲标模板和抽样报告 | 否 |
 
 项目只保留上述分步脚本作为执行入口，避免旧聚合 CLI 与新目录契约并存。
 
@@ -98,6 +99,29 @@ cp .env.example .env
 
 每次请求后立即写入 SQLite、CSV 和进度 JSON。再次运行 `run/start` 会从未完成任务继续，不会
 重复请求成功任务。该流程不生成 Batch JSONL。
+
+## Step 3：Human Gold 抽样与盲标准备
+
+Step 3 只在 Step 2 的 S/W/R 成功结果中抽取约 2,000 件专利；E 层不进入常规 Gold。默认使用
+1,500 条代表性随机核心和 500 条风险加抽，固定 seed，并为每个互斥细分层保存总体数、样本数、
+入样概率和评价权重：
+
+```bash
+.venv/bin/python scripts/step3_gold_sampling.py
+```
+
+主要产物：
+
+- `gold_sample_audit.csv`：含 G0、抽样层和评价权重，仅供研究协调人审计；
+- `gold_sample_blinded.csv`：不含 Step 1/G0/抽样信息的盲化样本主表；
+- `annotation_round1_A.csv` 与 `annotation_round1_B.csv`：顺序独立随机化的双人盲标模板；
+- `adjudication_template.csv`：双人提交冻结后的冲突仲裁模板；
+- `sampling_strata.csv`、`sampling_report.json`：抽样概率和复现清单；
+- `annotation_schema.json`：允许值和字段格式。
+
+已存在 Step 3 产物时脚本默认拒绝覆盖。只有明确需要重新冻结样本时才使用 `--rebuild`。人工标注
+流程和 A-B-C-D 证据链规则见 `docs/human_gold_annotation_guidelines.md`。首次独立提交冻结前，
+不得向标注者提供 `gold_sample_audit.csv`。
 
 ## 验证
 

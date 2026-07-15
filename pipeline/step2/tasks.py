@@ -140,7 +140,7 @@ def prepare_tasks(
         raise ValueError("Step 2 task count or patent uniqueness check failed")
 
     manifest = {
-        "schema_version": "2.0.0",
+        "schema_version": "2.1.0",
         "step": "step2_task_preparation",
         "dataset_id": dataset,
         "raw_input_path": str(raw),

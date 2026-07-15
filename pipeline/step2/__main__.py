@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.common.datasets import dataset_id
-from pipeline.step2.client import ARK_BASE_URL, OpenAICompatibleClient
+from pipeline.step2.client import ARK_BASE_URL, VolcengineArkClient
 from pipeline.step2.runner import read_progress, run_tasks
 from pipeline.step2.tasks import prepare_tasks, task_paths
 
@@ -32,13 +32,12 @@ def build_parser() -> argparse.ArgumentParser:
     run = subparsers.add_parser("run")
     run.add_argument("--input", type=Path, required=True, help="Used to resolve dataset ID")
     run.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "data" / "step2")
-    run.add_argument("--model", default=os.getenv("ARK_MODEL") or os.getenv("OPENAI_MODEL"))
+    run.add_argument("--model", default=os.getenv("ARK_MODEL"))
     run.add_argument("--base-url", default=os.getenv("ARK_BASE_URL", ARK_BASE_URL))
     run.add_argument("--timeout-seconds", type=float, default=180)
-    run.add_argument("--concurrency", type=int, default=1)
+    run.add_argument("--concurrency", type=int, default=10)
     run.add_argument("--max-attempts", type=int, default=3)
     run.add_argument("--retry-delay-seconds", type=float, default=2)
-    run.add_argument("--prompt-cache-key")
 
     status = subparsers.add_parser("status")
     status.add_argument("--input", type=Path, required=True)
@@ -70,16 +69,15 @@ def main() -> int:
         print(json.dumps(read_progress(paths), ensure_ascii=False, indent=2))
         return 0
     if not args.model:
-        raise SystemExit("--model, ARK_MODEL or OPENAI_MODEL is required")
+        raise SystemExit("--model or ARK_MODEL is required")
 
     global STOP_REQUESTED
     signal.signal(signal.SIGTERM, _request_stop)
     signal.signal(signal.SIGINT, _request_stop)
-    client = OpenAICompatibleClient(
+    client = VolcengineArkClient(
         model=args.model,
         base_url=args.base_url,
         timeout_seconds=args.timeout_seconds,
-        prompt_cache_key=args.prompt_cache_key,
     )
     progress = run_tasks(
         paths,
@@ -100,12 +98,26 @@ def _request_stop(_signum: int, _frame: Any) -> None:
 
 
 def _print_progress(progress: dict[str, Any]) -> None:
+    eta = progress["eta_seconds"]
     print(
+        f"model={progress['model']} "
         f"completed={progress['completed']}/{progress['total']} "
+        f"succeeded={progress['succeeded']} failed={progress['failed']} "
         f"({progress['progress_percent']:.2f}%) "
+        f"concurrency={progress['concurrency']} "
+        f"elapsed={_format_duration(progress['run_elapsed_seconds'])} "
+        f"avg={progress['average_request_seconds']:.2f}s "
+        f"eta={_format_duration(eta) if eta is not None else 'unknown'} "
         f"cached_tokens={progress['usage']['cached_tokens']}",
         flush=True,
     )
+
+
+def _format_duration(seconds: float) -> str:
+    total = max(0, round(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
 def _paths_json(paths: Any) -> dict[str, str]:

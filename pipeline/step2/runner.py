@@ -11,12 +11,12 @@ import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from pipeline.common.io import atomic_json_write
-from pipeline.step2.client import ClassificationResponse, OpenAICompatibleClient
+from pipeline.step2.client import ClassificationResponse, VolcengineArkClient
 from pipeline.step2.tasks import Step2TaskPaths
 
 RESULT_FIELDS = (
@@ -40,6 +40,8 @@ RESULT_FIELDS = (
     "label",
     "confidence",
     "scope_basis",
+    "processing_activities",
+    "industry_sectors",
     "technical_scope",
     "legal_scope",
     "evidence",
@@ -60,11 +62,11 @@ RESULT_FIELDS = (
 
 def run_tasks(
     paths: Step2TaskPaths,
-    client: OpenAICompatibleClient,
+    client: VolcengineArkClient,
     *,
     max_attempts: int = 3,
     retry_delay_seconds: float = 2,
-    concurrency: int = 1,
+    concurrency: int = 10,
     stop_requested: Callable[[], bool] | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
@@ -73,6 +75,8 @@ def run_tasks(
     if max_attempts < 1 or concurrency < 1 or retry_delay_seconds < 0:
         raise ValueError("Invalid retry or concurrency settings")
     stop_requested = stop_requested or (lambda: False)
+    run_started_monotonic = time.monotonic()
+    run_started_at = _now()
     with _exclusive_lock(paths.database):
         connection = _connect(paths.database)
         try:
@@ -80,6 +84,17 @@ def run_tasks(
             connection.execute("UPDATE tasks SET status='pending' WHERE status='running'")
             connection.commit()
             export_results(paths, connection=connection)
+            initial_progress = _progress(
+                connection,
+                paths,
+                client,
+                concurrency,
+                run_started_monotonic=run_started_monotonic,
+                run_started_at=run_started_at,
+            )
+            atomic_json_write(paths.progress, initial_progress)
+            if progress_callback:
+                progress_callback(initial_progress)
             _run_loop(
                 paths,
                 connection,
@@ -89,8 +104,17 @@ def run_tasks(
                 concurrency=concurrency,
                 stop_requested=stop_requested,
                 progress_callback=progress_callback,
+                run_started_monotonic=run_started_monotonic,
+                run_started_at=run_started_at,
             )
-            progress = _progress(connection, paths, client, concurrency)
+            progress = _progress(
+                connection,
+                paths,
+                client,
+                concurrency,
+                run_started_monotonic=run_started_monotonic,
+                run_started_at=run_started_at,
+            )
             progress["stopped_by_request"] = bool(stop_requested())
             atomic_json_write(paths.progress, progress)
             export_results(paths, connection=connection)
@@ -142,13 +166,15 @@ def read_progress(paths: Step2TaskPaths) -> dict[str, Any]:
 def _run_loop(
     paths: Step2TaskPaths,
     connection: sqlite3.Connection,
-    client: OpenAICompatibleClient,
+    client: VolcengineArkClient,
     *,
     max_attempts: int,
     retry_delay_seconds: float,
     concurrency: int,
     stop_requested: Callable[[], bool],
     progress_callback: Callable[[dict[str, Any]], None] | None,
+    run_started_monotonic: float,
+    run_started_at: str,
 ) -> None:
     def classify(task: sqlite3.Row) -> ClassificationResponse | Exception:
         try:
@@ -209,7 +235,14 @@ def _run_loop(
                     retry_not_before[task["task_id"]] = (
                         time.monotonic() + retry_delay_seconds
                     )
-            progress = _progress(connection, paths, client, concurrency)
+            progress = _progress(
+                connection,
+                paths,
+                client,
+                concurrency,
+                run_started_monotonic=run_started_monotonic,
+                run_started_at=run_started_at,
+            )
             atomic_json_write(paths.progress, progress)
             if progress_callback:
                 progress_callback(progress)
@@ -312,8 +345,11 @@ def _persist_outcome(
 def _progress(
     connection: sqlite3.Connection,
     paths: Step2TaskPaths,
-    client: OpenAICompatibleClient,
+    client: VolcengineArkClient,
     concurrency: int,
+    *,
+    run_started_monotonic: float,
+    run_started_at: str,
 ) -> dict[str, Any]:
     counts = {
         row["status"]: row["count"]
@@ -323,12 +359,17 @@ def _progress(
     }
     total = sum(counts.values())
     completed = counts.get("succeeded", 0) + counts.get("failed", 0)
+    pending = counts.get("pending", 0) + counts.get("running", 0)
     usage = connection.execute(
         """
         SELECT SUM(prompt_tokens) prompt_tokens, SUM(cached_tokens) cached_tokens,
           SUM(cache_write_tokens) cache_write_tokens,
           COUNT(cached_tokens) cached_observations,
-          SUM(elapsed_seconds) elapsed_seconds, SUM(attempts) attempts
+          COALESCE(SUM(elapsed_seconds),0) cumulative_request_seconds,
+          COALESCE(SUM(attempts - CASE WHEN status='running' THEN 1 ELSE 0 END),0)
+            completed_attempts,
+          COALESCE(AVG(CASE WHEN status IN ('succeeded','failed')
+            THEN elapsed_seconds END),0) average_completed_task_seconds
         FROM tasks
         """
     ).fetchone()
@@ -339,11 +380,30 @@ def _progress(
         if usage["cached_observations"] and prompt_tokens
         else None
     )
+    cumulative_request_seconds = float(usage["cumulative_request_seconds"] or 0)
+    completed_attempts = int(usage["completed_attempts"] or 0)
+    average_request_seconds = (
+        cumulative_request_seconds / completed_attempts if completed_attempts else 0
+    )
+    average_completed_task_seconds = float(
+        usage["average_completed_task_seconds"] or average_request_seconds
+    )
+    eta_seconds = (
+        round(pending * average_completed_task_seconds / concurrency, 3)
+        if average_completed_task_seconds
+        else None
+    )
+    run_elapsed_seconds = round(time.monotonic() - run_started_monotonic, 3)
+    estimated_finish_at = (
+        (datetime.now(UTC) + timedelta(seconds=eta_seconds)).isoformat()
+        if eta_seconds is not None
+        else None
+    )
     manifest = json.loads(
         connection.execute("SELECT value FROM meta WHERE key='task_manifest'").fetchone()[0]
     )
     return {
-        "schema_version": "2.0.0",
+        "schema_version": "2.1.0",
         "dataset_id": manifest["dataset_id"],
         "database": str(paths.database),
         "results": str(paths.results),
@@ -355,25 +415,29 @@ def _progress(
         "completed": completed,
         "succeeded": counts.get("succeeded", 0),
         "failed": counts.get("failed", 0),
-        "pending": counts.get("pending", 0) + counts.get("running", 0),
+        "pending": pending,
         "concurrency": concurrency,
         "progress_percent": round(completed / total * 100, 4) if total else 0,
+        "run_started_at": run_started_at,
+        "run_elapsed_seconds": run_elapsed_seconds,
+        "cumulative_request_seconds": round(cumulative_request_seconds, 3),
+        "average_request_seconds": round(average_request_seconds, 3),
+        "average_completed_task_seconds": round(average_completed_task_seconds, 3),
+        "eta_seconds": eta_seconds,
+        "estimated_finish_at": estimated_finish_at,
         "usage": {
             "prompt_tokens": prompt_tokens,
             "cached_tokens": cached_tokens if usage["cached_observations"] else None,
             "cache_write_tokens": usage["cache_write_tokens"],
             "cache_hit_ratio": ratio,
         },
-        "average_request_seconds": round(
-            usage["elapsed_seconds"] / usage["attempts"], 3
-        ) if usage["attempts"] else 0,
         "updated_at": _now(),
     }
 
 
 def _validate_prompt_identity(
     connection: sqlite3.Connection,
-    client: OpenAICompatibleClient,
+    client: VolcengineArkClient,
 ) -> None:
     row = connection.execute("SELECT value FROM meta WHERE key='task_manifest'").fetchone()
     if row is None:
@@ -408,6 +472,10 @@ def _result_row(row: sqlite3.Row) -> dict[str, Any]:
         "label": result.get("label", ""),
         "confidence": result.get("confidence", ""),
         "scope_basis": json.dumps(result.get("scope_basis", []), ensure_ascii=False),
+        "processing_activities": json.dumps(
+            result.get("processing_activities", []), ensure_ascii=False
+        ),
+        "industry_sectors": json.dumps(result.get("industry_sectors", []), ensure_ascii=False),
         "technical_scope": result.get("technical_scope", ""),
         "legal_scope": result.get("legal_scope", ""),
         "evidence": json.dumps(result.get("evidence", []), ensure_ascii=False),

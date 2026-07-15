@@ -57,15 +57,15 @@ class PatentEvidence(BaseModel):
 
 
 class PatentClassification(BaseModel):
-    """Two labels plus an independent review flag."""
+    """Binary decision, two downstream analysis dimensions and a review flag."""
 
     model_config = ConfigDict(extra="forbid")
 
     label: Label
     confidence: float = Field(ge=0, le=1)
     scope_basis: list[ScopeBasis] = Field(min_length=1, max_length=3)
-    processing_activities: list[ProcessingActivity] = Field(min_length=1, max_length=3)
-    industry_sectors: list[IndustrySector] = Field(min_length=1, max_length=3)
+    processing_activities: list[ProcessingActivity] = Field(min_length=1, max_length=8)
+    industry_sectors: list[IndustrySector] = Field(min_length=1, max_length=9)
     technical_scope: str = Field(min_length=1, max_length=800)
     legal_scope: str = Field(min_length=1, max_length=800)
     evidence: list[PatentEvidence] = Field(min_length=1, max_length=3)

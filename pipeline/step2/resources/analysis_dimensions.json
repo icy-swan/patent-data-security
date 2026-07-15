@@ -1,0 +1,46 @@
+{
+  "dimension_version": "data-security-analysis-dimensions-v1.0.0",
+  "application_rule": "两个分析维度只服务于 DATA_SECURITY 专利的后续统计。标签必须由专利名称、摘要或主权项实际披露的处理环节和应用行业支持，不得仅凭申请人名称、IPC、常识或模型推测补全。",
+  "dimensions": [
+    {
+      "id": "processing_activities",
+      "label": "数据处理环节",
+      "legal_basis": "《中华人民共和国数据安全法》第三条",
+      "multi_label": true,
+      "values": [
+        {"id": "collection", "label": "收集", "definition": "获取、采集或汇集数据。"},
+        {"id": "storage", "label": "存储", "definition": "保存、持久化、备份或归档数据。"},
+        {"id": "use", "label": "使用", "definition": "读取、调用或利用数据实现业务或技术目的。"},
+        {"id": "processing", "label": "加工", "definition": "对数据进行计算、转换、清洗、分析、编辑或其他加工。"},
+        {"id": "transmission", "label": "传输", "definition": "在设备、系统、网络或主体之间传送数据。"},
+        {"id": "provision", "label": "提供", "definition": "向其他主体或系统提供、共享或交付数据。"},
+        {"id": "disclosure", "label": "公开", "definition": "面向不特定对象发布、展示或披露数据。"},
+        {"id": "other", "label": "其他", "definition": "属于数据安全，但现有专利证据不能落入前述具体环节，或涉及其他数据处理活动。"}
+      ]
+    },
+    {
+      "id": "industry_sectors",
+      "label": "行业领域",
+      "legal_basis": "《中华人民共和国数据安全法》第六条",
+      "multi_label": true,
+      "values": [
+        {"id": "industry", "label": "工业", "definition": "制造、生产、工业控制、工业互联网或其他工业场景。"},
+        {"id": "telecommunications", "label": "电信", "definition": "通信网络、运营商、电信业务或通信服务场景。"},
+        {"id": "transportation", "label": "交通", "definition": "道路、铁路、航空、水运、车辆或交通管理场景。"},
+        {"id": "finance", "label": "金融", "definition": "银行、证券、保险、支付、征信或其他金融场景。"},
+        {"id": "natural_resources", "label": "自然资源", "definition": "土地、矿产、海洋、测绘、地理信息或其他自然资源场景。"},
+        {"id": "healthcare", "label": "卫生健康", "definition": "医疗、医院、公共卫生、健康管理或生物医学场景。"},
+        {"id": "education", "label": "教育", "definition": "学校、教学、考试、学习或教育管理场景。"},
+        {"id": "science_technology", "label": "科技", "definition": "科研、实验、技术研发或科技管理场景；不得仅因专利具有技术性就选择本项。"},
+        {"id": "other", "label": "其他", "definition": "通用或跨行业数据安全技术，或者专利证据不能落入前述具体行业。"}
+      ]
+    }
+  ],
+  "validation_rules": [
+    "每个维度至少返回一个互不重复的值；只返回有专利证据支持的具体值，不得为凑数全选。",
+    "other 与同一维度中的任何具体值互斥。",
+    "主标签为 OTHER 时，两个维度都必须固定为 [\"other\"]。",
+    "主标签为 DATA_SECURITY 时可以使用 other，但只能表示专利证据未披露可归入的具体处理环节或行业。",
+    "行业领域不得根据申请人名称、IPC 或常识单独推断；科技不得作为所有技术专利的默认行业。"
+  ]
+}

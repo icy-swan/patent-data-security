@@ -8,11 +8,11 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 from pipeline.common.io import sha256_file
 from pipeline.step1.taxonomy import KeywordBundle, load_keyword_bundle
-from pipeline.step2.schema import PatentClassification
+from pipeline.step2.schema import IndustrySector, PatentClassification, ProcessingActivity
 
 PROMPT_VERSION = "data-security-binary-v2.1.0"
 DEFAULT_RESOURCE_DIR = Path(__file__).resolve().parent / "resources"
@@ -78,6 +78,7 @@ def load_prompt_bundle(
     if len(article_numbers) != int(manifest.get("article_count", 0)):
         raise ValueError("Data Security Law article count does not match manifest")
     _validate_scope_alignment(scope, step1)
+    _validate_analysis_dimensions(analysis_dimensions)
 
     schema_json = _canonical_json(PatentClassification.model_json_schema())
     scope_sha256 = sha256_file(scope_path)
@@ -241,6 +242,24 @@ def _validate_scope_alignment(scope: dict[str, Any], step1: KeywordBundle) -> No
     )
     if unknown_sources := configured_sources - known_sources:
         raise ValueError(f"Unknown Step 1 sources in Step 2 scope: {sorted(unknown_sources)}")
+
+
+def _validate_analysis_dimensions(dimensions: dict[str, Any]) -> None:
+    expected = {
+        "processing_activities": list(get_args(ProcessingActivity)),
+        "industry_sectors": list(get_args(IndustrySector)),
+    }
+    configured: dict[str, list[str]] = {}
+    for dimension in dimensions.get("dimensions", []):
+        dimension_id = str(dimension["id"])
+        if dimension_id in configured:
+            raise ValueError(f"Duplicate Step 2 analysis dimension: {dimension_id}")
+        configured[dimension_id] = [str(item["id"]) for item in dimension.get("values", [])]
+    if configured != expected:
+        raise ValueError(
+            "Step 2 analysis dimensions do not match the Pydantic output enums: "
+            f"expected={expected!r}, configured={configured!r}"
+        )
 
 
 def _read_json(path: Path) -> dict[str, Any]:

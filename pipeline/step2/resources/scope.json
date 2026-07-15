@@ -1,0 +1,123 @@
+{
+  "schema_version": "1.0.0",
+  "scope_version": "data-security-binary-v2.0.0",
+  "aligned_step1_keyword_version": "2.0.0-pilot.2",
+  "name": "Step 2 DATA_SECURITY 受控领域范围",
+  "classification_rule": "专利披露的技术方案只要实质落入任一受控范围即可判为 DATA_SECURITY；不要求数据安全是唯一目的或最主要商业目标。普通处理、背景提及、清单式可选组件和无法落到披露技术方案的抽象可能性不构成正类。",
+  "scope_basis": [
+    {
+      "id": "legal_data_security",
+      "label": "数据安全法律范围与网络安全领域",
+      "definition": "直接涉及数据安全、网络数据安全、网络安全、数据保护或依法采取必要技术措施保障数据有效保护、合法利用和持续安全。",
+      "step1_concept_ids": ["DESC-DOMAIN", "DESC-NETWORK-SECURITY", "DESC-GENERIC-CONTEXT"]
+    },
+    {
+      "id": "personal_information_protection",
+      "label": "个人信息、身份信息与隐私保护",
+      "definition": "涉及个人信息、敏感个人信息、电子身份、隐私、商业秘密的保护、去标识化、匿名化、脱敏或防止未经授权处理。",
+      "step1_concept_ids": ["DESC-PERSONAL-DATA", "DESC-DEIDENTIFICATION"]
+    },
+    {
+      "id": "cryptography",
+      "label": "密码学、密码原语与安全通信",
+      "definition": "涉及密码学、加密解密、密文、散列、消息认证、数字签名、密钥与证书、后量子密码、密码协议或加密通信；密码技术本身即属于范围，不要求另写保护目的。",
+      "step1_concept_ids": [
+        "TECH-CRYPTOGRAPHY", "TECH-ENCRYPTION", "TECH-PLAINTEXT", "TECH-HASH-SIGNATURE",
+        "TECH-KEY-CERTIFICATE", "TECH-ADVANCED-CRYPTO", "TECH-SECURE-COMMUNICATION"
+      ]
+    },
+    {
+      "id": "data_confidentiality",
+      "label": "数据保密性与防泄漏",
+      "definition": "防止数据、信息或模型参数泄露、窃取、外泄、非法获取或非法利用，包括数据防泄漏、外发管控、水印追踪和可追踪加密。",
+      "step1_concept_ids": ["DESC-RISK", "TECH-PROVENANCE-DLP", "TECH-DLP-ACRONYM"]
+    },
+    {
+      "id": "data_integrity",
+      "label": "数据完整性、防篡改与可验证存储",
+      "definition": "防止或检测数据篡改、破坏、毁损，或者提供完整性验证、数据持有证明、可取回性证明、认证数据结构和防篡改机制。",
+      "step1_concept_ids": ["DESC-RISK", "TECH-INTEGRITY-VERIFICATION", "TECH-AUDIT-INTEGRITY-GENERIC"]
+    },
+    {
+      "id": "data_availability",
+      "label": "数据可用性、备份恢复与安全删除",
+      "definition": "保障数据持续可用、容灾备份、灾难恢复、数据恢复、勒索防护、安全或可信删除及密码擦除。",
+      "step1_concept_ids": ["TECH-DATA-RECOVERY", "DESC-RISK"]
+    },
+    {
+      "id": "access_control_authentication",
+      "label": "数据访问控制、授权与身份认证",
+      "definition": "控制数据或系统的访问权限、授权策略、最小权限和越权行为，或者以身份鉴别、多因素认证和可信身份支撑安全访问。",
+      "step1_concept_ids": [
+        "TECH-DATA-ACCESS-CONTROL", "TECH-GENERIC-ACCESS-CONTROL",
+        "TECH-IDENTITY-AUTHENTICATION"
+      ]
+    },
+    {
+      "id": "privacy_enhancing_technology",
+      "label": "隐私增强与隐私保护学习",
+      "definition": "涉及差分隐私、联邦学习中的隐私保护、安全聚合、私有信息检索、私有集合求交、零知识证明或其他隐私增强技术。",
+      "step1_concept_ids": ["DESC-DEIDENTIFICATION", "TECH-PRIVACY-PROTOCOL"]
+    },
+    {
+      "id": "secure_computation",
+      "label": "密态计算、安全多方计算与可信执行",
+      "definition": "涉及同态加密、密文计算、安全多方或两方计算、秘密共享、可搜索加密、安全外包计算、可信执行环境、安全飞地或机密计算。",
+      "step1_concept_ids": [
+        "TECH-PRIVACY-COMPUTING", "TECH-CIPHERTEXT-USE", "TECH-TRUSTED-EXECUTION"
+      ]
+    },
+    {
+      "id": "security_audit_provenance",
+      "label": "安全审计、溯源和责任追踪",
+      "definition": "涉及数据或数据库安全审计、日志审计、数据溯源、数据血缘、水印或数字指纹，并且机制用于安全核验、追踪或问责。",
+      "step1_concept_ids": ["TECH-AUDIT-INTEGRITY-GENERIC", "TECH-PROVENANCE-DLP"]
+    },
+    {
+      "id": "data_governance_compliance",
+      "label": "数据治理、分类分级与合规控制",
+      "definition": "涉及数据分类分级、重要或核心数据识别、数据安全评估审查、出境安全、权限治理或数据安全合规的技术实现。",
+      "step1_concept_ids": ["DESC-GOVERNANCE"]
+    },
+    {
+      "id": "security_monitoring_response",
+      "label": "安全风险监测与事件响应",
+      "definition": "检测、预警或响应数据泄露、网络攻击、网络侵入、系统漏洞、恶意程序、异常访问或数据安全事件，并采取补救、隔离、恢复或应急处置措施。",
+      "step1_concept_ids": ["DESC-RISK", "DESC-NETWORK-SECURITY", "TECH-NEIGHBOR-CONTEXT"]
+    },
+    {
+      "id": "other_data_security",
+      "label": "其他实质数据安全技术",
+      "definition": "未被前述枚举完全覆盖、但专利披露明确说明其技术机制直接产生数据保密性、完整性、可用性、可控性、可审计性、可追溯性或合法安全利用效果。",
+      "step1_concept_ids": ["TECH-NEIGHBOR-CONTEXT"]
+    }
+  ],
+  "context_sensitive_step1_concepts": [
+    "DESC-GENERIC-CONTEXT",
+    "TECH-PLAINTEXT",
+    "TECH-GENERIC-ACCESS-CONTROL",
+    "TECH-IDENTITY-AUTHENTICATION",
+    "TECH-AUDIT-INTEGRITY-GENERIC",
+    "TECH-DLP-ACRONYM",
+    "TECH-NEIGHBOR-CONTEXT"
+  ],
+  "source_alignment": {
+    "legal_and_normative_source_ids": [
+      "LAW-DSL-2021", "LAW-PIPL-2021", "LAW-CSL-2025", "REG-NDS-2024",
+      "LAW-CRYPT-2019", "STD-GB37988-2019", "EXPERT-LEXICON-0715"
+    ],
+    "technical_research_source_ids": [
+      "PAPER-PRIVML-2020", "PAPER-CLOUDSEC-2021", "PAPER-SEARCHENC-2015",
+      "PAPER-DBSEC-2010", "PAPER-INTEGRITY-2017", "PAPER-INFOSEC-2019",
+      "DOMAIN-ZHOU-2022"
+    ],
+    "note": "方法论文用于检索构造和验证，不作为 DATA_SECURITY 技术范围本身；每个 Step1 生产 concept 必须至少映射到一个 Step2 scope_basis。"
+  },
+  "negative_boundaries": [
+    "只有普通的数据采集、存储、传输、分析、推荐、预测或数据库操作，没有安全目标、风险、约束或安全机制。",
+    "安全词仅指生产、驾驶、食品、消防、机械或人身安全，未披露数据或网络安全含义。",
+    "网络、区块链、联邦学习、身份识别、备份、异常检测等只作为背景、应用环境、清单式可选组件或普通业务功能出现。",
+    "仅涉及虚假信息、名誉、传播秩序等内容治理，未披露数据或网络安全技术机制。",
+    "需要依靠常识补全保护对象、威胁、机制或安全效果才能建立关联。"
+  ]
+}

@@ -9,6 +9,8 @@ description = "Auditable S/E routing for Chinese data-security patents."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "openai>=1.68,<3",
+  "pydantic>=2.8,<3",
   "pyahocorasick>=2.1,<3",
 ]
 
@@ -24,6 +26,7 @@ include = ["pipeline*"]
 
 [tool.setuptools.package-data]
 "pipeline.step1" = ["resources/*.json", "resources/*.md"]
+"pipeline.step2" = ["resources/*.json", "resources/*.txt"]
 
 [tool.ruff]
 line-length = 100
@@ -33,5 +36,4 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
-testpaths = ["pipeline/step1/tests"]
-
+testpaths = ["pipeline"]

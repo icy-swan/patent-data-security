@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+data/raw/*
+!data/raw/.gitkeep
+data/step1/*
+!data/step1/.gitkeep
+*.partial
+*.partial.sqlite3
+

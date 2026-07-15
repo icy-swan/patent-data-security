@@ -1,0 +1,120 @@
+{
+  "schema_version": "2.0.0",
+  "source_manifest_version": "2.0.0-pilot.1",
+  "sources": [
+    {
+      "id": "METH-BESSEN-HUNT-2007",
+      "type": "method_paper_ssci",
+      "citation": "Bessen, J., & Hunt, R. M. (2007). An Empirical Look at Software Patents. Journal of Economics & Management Strategy, 16(1), 157-189.",
+      "doi": "10.1111/j.1530-9134.2007.00136.x",
+      "url": "https://doi.org/10.1111/j.1530-9134.2007.00136.x"
+    },
+    {
+      "id": "METH-BENSON-MAGEE-2013",
+      "type": "method_paper_ssci_scie",
+      "citation": "Benson, C. L., & Magee, C. L. (2013). A hybrid keyword and patent class methodology for selecting relevant sets of patents for a technological field. Scientometrics, 96(1), 69-82.",
+      "doi": "10.1007/s11192-012-0930-3",
+      "url": "https://doi.org/10.1007/s11192-012-0930-3"
+    },
+    {
+      "id": "METH-MOELLER-MOEHRLE-2015",
+      "type": "method_paper_ssci_scie",
+      "citation": "Moeller, K., & Moehrle, M. G. (2015). Completing keyword patent search with semantic patent search. Scientometrics, 102, 77-96.",
+      "doi": "10.1007/s11192-014-1446-9",
+      "url": "https://doi.org/10.1007/s11192-014-1446-9"
+    },
+    {
+      "id": "METH-XIE-MIYAZAKI-2013",
+      "type": "method_paper_patent_information",
+      "citation": "Xie, Z., & Miyazaki, K. (2013). Evaluating the effectiveness of keyword search strategy for patent identification. World Patent Information, 35(1), 20-30.",
+      "doi": "10.1016/j.wpi.2012.10.005",
+      "url": "https://doi.org/10.1016/j.wpi.2012.10.005"
+    },
+    {
+      "id": "DOMAIN-RAND-2021",
+      "type": "cybersecurity_method_report",
+      "citation": "RAND Corporation. (2021). An Open-Source Method for Assessing National Scientific and Technological Standing.",
+      "url": "https://www.rand.org/pubs/research_reports/RRA1482-3.html"
+    },
+    {
+      "id": "DOMAIN-ZHOU-2022",
+      "type": "data_security_patent_study",
+      "citation": "周伯慧, 于乐, 马禹昇, 潘佳丽. (2022). 数据安全技术专利态势分析. 信息通信技术与政策, 48(7), 87-91.",
+      "doi": "10.12267/j.issn.2096-5931.2022.07.013",
+      "url": "https://doi.org/10.12267/j.issn.2096-5931.2022.07.013"
+    },
+    {
+      "id": "LAW-DSL-2021",
+      "type": "law",
+      "citation": "中华人民共和国数据安全法",
+      "url": "https://www.npc.gov.cn/npc/c2/c30834/202106/t20210610_311888.html"
+    },
+    {
+      "id": "LAW-PIPL-2021",
+      "type": "law",
+      "citation": "中华人民共和国个人信息保护法",
+      "url": "https://www.npc.gov.cn/npc/c2/c30834/202108/t20210820_313088.html"
+    },
+    {
+      "id": "REG-NDS-2024",
+      "type": "regulation",
+      "citation": "网络数据安全管理条例",
+      "url": "https://www.cac.gov.cn/2024-09/30/c_1729384452307680.htm"
+    },
+    {
+      "id": "LAW-CRYPT-2019",
+      "type": "law",
+      "citation": "中华人民共和国密码法",
+      "url": "https://www.nca.gov.cn/sca/xxgk/2023-06/04/content_1057225.shtml"
+    },
+    {
+      "id": "STD-GB37988-2019",
+      "type": "national_standard",
+      "citation": "GB/T 37988-2019 信息安全技术 数据安全能力成熟度模型",
+      "url": "https://std.samr.gov.cn/gb/search/gbDetailed?id=91890A0DA63380C6E05397BE0A0A065D"
+    },
+    {
+      "id": "PAPER-PRIVML-2020",
+      "type": "technical_review",
+      "citation": "机器学习的隐私保护研究综述. 计算机研究与发展, 2020.",
+      "url": "https://crad.ict.ac.cn/fileJSJYJYFZ/journal/article/jsjyjyfz/HTML/2020-2-346.shtml"
+    },
+    {
+      "id": "PAPER-CLOUDSEC-2021",
+      "type": "technical_review",
+      "citation": "云数据安全保护方法综述. 计算机研究与发展, 2021.",
+      "url": "https://crad.ict.ac.cn/fileJSJYJYFZ/journal/article/jsjyjyfz/HTML/2021-10-2079.shtml"
+    },
+    {
+      "id": "PAPER-SEARCHENC-2015",
+      "type": "technical_review",
+      "citation": "可搜索加密技术研究综述. 软件学报.",
+      "url": "https://www.jos.org.cn/jos/article/abstract/4700"
+    },
+    {
+      "id": "PAPER-DBSEC-2010",
+      "type": "technical_review",
+      "citation": "数据库服务——安全与隐私保护. 软件学报.",
+      "url": "https://www.jos.org.cn/jos/article/abstract/3746"
+    },
+    {
+      "id": "PAPER-INTEGRITY-2017",
+      "type": "technical_review",
+      "citation": "云存储完整性验证密码学技术研究进展. 信息安全学报, 2017.",
+      "url": "https://jcs.iie.ac.cn/xxaqxben/ch/reader/view_abstract.aspx?file_no=20170303&flag=1"
+    },
+    {
+      "id": "PAPER-INFOSEC-2019",
+      "type": "technical_review",
+      "citation": "信息安全的新发展. 计算机研究与发展, 2019.",
+      "url": "https://crad.ict.ac.cn/fileJSJYJYFZ/journal/article/jsjyjyfz/HTML/2019-1-131.shtml"
+    },
+    {
+      "id": "WIPO-IPC-2026",
+      "type": "patent_classification",
+      "citation": "WIPO International Patent Classification, 2026 edition.",
+      "url": "https://ipcpub.wipo.int/"
+    }
+  ]
+}
+

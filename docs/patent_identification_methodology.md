@@ -1,6 +1,6 @@
 # 数据安全专利识别方法（v2）
 
-- 文档状态：Step 1 与 Step 2 设计稿
+- 文档状态：Step 1 pilot 已实现；Step 2 设计稿
 - 版本：2.0.0-draft
 - 更新日期：2026-07-15
 - 适用范围：中国上市公司专利文本的数据安全领域识别
@@ -365,6 +365,18 @@ pipeline/step1/resources/CHANGELOG.md
 ```
 
 每次运行把上述文件的 SHA-256 写入摘要，保证历史结果可复现。验证报告另存运行产物，不覆盖预注册协议。
+
+Step 1 pilot 的实现对应如下：
+
+| 方法组件 | 实现文件 |
+| --- | --- |
+| 流式读取与字段规范化 | `pipeline/common/records.py` |
+| S/E 关键词、上下文、排除语境与 IPC 审计 | `pipeline/step1/matcher.py` |
+| 唯一专利 SQLite 去重、稳定 E 抽样与原子导出 | `pipeline/step1/runner.py` |
+| 词表、来源和预注册验证协议 | `pipeline/step1/resources/` |
+| 命令入口 | `python -m pipeline.step1` |
+
+“已实现”只表示工程规则可以运行和复现，不表示 pilot 种子词表已经通过第 5.3 节的人工开发集与留出集验证。
 
 ## 6. Step 2：大模型领域识别
 
@@ -793,3 +805,12 @@ python -m pipeline.step2 stop ...
 5. 是否在生产运行中默认启用显式 Context API，取决于实际模型接入点的支持情况和并发压测结果。
 
 这些未决事项不会改变本版已经确定的两类路由、宽口径领域定义、双来源关键词体系和固定前缀缓存结构。
+
+## 12. 方法论参考文献
+
+1. Bessen, J., & Hunt, R. M. (2007). [An Empirical Look at Software Patents](https://doi.org/10.1111/j.1530-9134.2007.00136.x). *Journal of Economics & Management Strategy*, 16(1), 157–189.
+2. Benson, C. L., & Magee, C. L. (2013). [A hybrid keyword and patent class methodology for selecting relevant sets of patents for a technological field](https://doi.org/10.1007/s11192-012-0930-3). *Scientometrics*, 96(1), 69–82.
+3. Moeller, K., & Moehrle, M. G. (2015). [Completing keyword patent search with semantic patent search: Introducing a semiautomatic iterative method for patent near search based on semantic similarities](https://doi.org/10.1007/s11192-014-1446-9). *Scientometrics*, 102, 77–96.
+4. Xie, Z., & Miyazaki, K. (2013). [Evaluating the effectiveness of keyword search strategy for patent identification](https://doi.org/10.1016/j.wpi.2012.10.005). *World Patent Information*, 35(1), 20–30.
+5. RAND Corporation. (2021). [An Open-Source Method for Assessing National Scientific and Technological Standing](https://www.rand.org/pubs/research_reports/RRA1482-3.html). RAND Corporation.
+6. 周伯慧、于乐、马禹昇、潘佳丽（2022）。[数据安全技术专利态势分析](https://doi.org/10.12267/j.issn.2096-5931.2022.07.013)。《信息通信技术与政策》，48(7)，87–91。

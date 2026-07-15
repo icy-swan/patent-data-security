@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0.0",
+  "protocol_version": "step1-validation-pilot.1",
+  "status": "pilot_not_started",
+  "method_sources": [
+    "METH-BESSEN-HUNT-2007",
+    "METH-BENSON-MAGEE-2013",
+    "METH-MOELLER-MOEHRLE-2015",
+    "METH-XIE-MIYAZAKI-2013",
+    "DOMAIN-RAND-2021",
+    "DOMAIN-ZHOU-2022"
+  ],
+  "primary_objective": "maximize estimated Step 1 recall subject to the Step 2 request budget",
+  "development_fields": ["title", "abstract", "claim"],
+  "context_window_candidates": [24, 48, 80],
+  "provisional_context_window": 48,
+  "annotation": {
+    "independent_annotators": 2,
+    "labels": ["DATA_SECURITY", "OTHER"],
+    "agreement_metrics": ["percent_agreement", "cohens_kappa"],
+    "adjudication_required": true
+  },
+  "samples": {
+    "development": "stratified by year, field completeness, seed hit and IPC",
+    "holdout": "sealed until all keyword and context rules are frozen",
+    "e_random": "probability sample used for weighted miss-rate and recall estimation",
+    "e_ipc_audit": "targeted audit used only for missing-term discovery"
+  },
+  "required_metrics": [
+    "precision_S",
+    "estimated_E_positive_rate",
+    "estimated_step1_recall",
+    "confidence_intervals",
+    "per_term_precision",
+    "per_field_precision_recall",
+    "year_stability",
+    "ipc_stability"
+  ],
+  "release_thresholds": null,
+  "note": "Numeric thresholds must be preregistered before holdout evaluation. The current keyword file is a seed lexicon, not a validated production taxonomy."
+}
+

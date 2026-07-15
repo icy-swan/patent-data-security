@@ -1,0 +1,405 @@
+{
+  "schema_version": "2.0.0",
+  "keyword_version": "2.0.0-pilot.1",
+  "methodology_version": "2.0.0-draft",
+  "name": "中国数据安全专利 S/E 种子词表",
+  "status": "pilot_not_empirically_validated",
+  "matching": {
+    "fields": ["claim", "abstract", "title"],
+    "unicode": "NFKC",
+    "casefold_latin": true,
+    "collapse_whitespace": true,
+    "unify_connectors": true,
+    "longest_keyword_first": true,
+    "preferred_context_scope": "sentence",
+    "context_window_chars": 48,
+    "ipc_changes_route": false
+  },
+  "context_lexicons": [
+    {
+      "id": "CTX-DATA-OBJECT",
+      "kind": "protected_object",
+      "variants": [
+        "网络数据", "个人信息", "敏感个人信息", "重要数据", "核心数据", "敏感数据",
+        "隐私数据", "用户数据", "业务数据", "训练数据", "模型参数", "数据库数据",
+        "日志数据", "云数据", "数据存储", "数据传输", "数据库", "数据集", "数据", "信息"
+      ],
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024"]
+    },
+    {
+      "id": "CTX-SPECIFIC-DATA-OBJECT",
+      "kind": "specific_protected_object",
+      "variants": [
+        "网络数据", "个人信息", "敏感个人信息", "重要数据", "核心数据", "敏感数据",
+        "隐私数据", "用户数据", "业务数据", "训练数据", "模型参数", "数据库数据",
+        "日志数据", "云数据", "数据存储", "数据传输", "数据库", "数据集", "电子记录"
+      ],
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024"]
+    },
+    {
+      "id": "CTX-SECURITY-GOAL",
+      "kind": "security_goal",
+      "variants": [
+        "数据安全", "信息安全", "个人信息保护", "隐私保护", "保密性", "机密性",
+        "完整性", "可用性", "真实性", "可控性", "可审计性", "可追溯性",
+        "不可否认性", "安全认证", "安全保护"
+      ],
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "LAW-CRYPT-2019"]
+    },
+    {
+      "id": "CTX-DATA-THREAT",
+      "kind": "threat_or_failure",
+      "variants": [
+        "数据泄露", "信息泄露", "隐私泄露", "泄漏", "外泄", "窃取", "篡改",
+        "破坏", "丢失", "非法获取", "非法利用", "未授权访问", "未经授权访问",
+        "越权访问", "数据滥用", "重识别", "推断攻击", "成员推断", "模型反演"
+      ],
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024"]
+    },
+    {
+      "id": "CTX-PROTECTION-ACTION",
+      "kind": "protection_action",
+      "variants": [
+        "保护", "防护", "加密", "解密", "脱敏", "去标识化", "匿名化", "访问控制",
+        "权限控制", "完整性验证", "安全审计", "隔离", "备份", "恢复", "安全删除", "溯源"
+      ],
+      "source_ids": ["LAW-PIPL-2021", "REG-NDS-2024", "STD-GB37988-2019"]
+    },
+    {
+      "id": "CTX-CRYPTOGRAPHY",
+      "kind": "cryptographic_context",
+      "variants": [
+        "密码", "密码学", "加密", "解密", "密文", "密钥", "密码算法", "密码协议",
+        "数字签名", "消息认证码"
+      ],
+      "source_ids": ["LAW-CRYPT-2019", "PAPER-INFOSEC-2019"]
+    }
+  ],
+  "concepts": [
+    {
+      "concept_id": "DESC-DOMAIN",
+      "category": "descriptive",
+      "canonical_term": "数据安全领域名称",
+      "variants": [
+        "数据安全", "数据保护", "数据安全保护", "数据安全防护", "网络数据安全",
+        "信息安全", "信息保护", "个人信息安全", "个人信息保护", "隐私保护",
+        "数据隐私", "隐私安全", "数据安全治理", "数据安全能力"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024"]
+    },
+    {
+      "concept_id": "DESC-RISK",
+      "category": "descriptive",
+      "canonical_term": "数据安全风险与事件",
+      "variants": [
+        "数据泄露", "信息泄露", "隐私泄露", "数据篡改", "数据破坏", "数据毁损",
+        "数据丢失", "数据窃取", "非法获取数据", "非法利用数据", "未授权访问",
+        "未经授权访问", "越权访问", "数据滥用", "重识别", "推断攻击", "成员推断", "模型反演"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024"]
+    },
+    {
+      "concept_id": "DESC-GOVERNANCE",
+      "category": "descriptive",
+      "canonical_term": "数据安全治理",
+      "variants": [
+        "数据分类分级", "数据安全风险评估", "数据安全审计", "数据安全监测",
+        "数据安全预警", "数据安全事件", "数据安全应急", "个人信息保护影响评估",
+        "数据出境安全", "数据合规", "重要数据识别", "核心数据识别", "敏感数据识别"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "STD-GB37988-2019"]
+    },
+    {
+      "concept_id": "DESC-DEIDENTIFICATION",
+      "category": "descriptive",
+      "canonical_term": "隐私处理",
+      "variants": [
+        "匿名化", "去标识化", "假名化", "脱敏", "数据脱敏", "静态脱敏", "动态脱敏",
+        "隐私增强", "最小必要", "最小化处理"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["LAW-PIPL-2021", "REG-NDS-2024"]
+    },
+    {
+      "concept_id": "DESC-GENERIC-CONTEXT",
+      "category": "descriptive",
+      "canonical_term": "通用法律安全词",
+      "variants": ["安全", "保护", "保密", "隐私", "合规"],
+      "excluded_phrases": [
+        "安全生产", "生产安全", "施工安全", "行车安全", "驾驶安全", "食品安全",
+        "消防安全", "电气安全", "人身安全", "作业安全", "安全阀", "安全气囊", "安全带"
+      ],
+      "match_policy": {"mode": "cooccurrence", "required_any": ["CTX-SPECIFIC-DATA-OBJECT"]},
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "METH-BESSEN-HUNT-2007"]
+    },
+    {
+      "concept_id": "TECH-CRYPTOGRAPHY",
+      "category": "technical",
+      "canonical_term": "密码学",
+      "variants": [
+        "密码", "密码学", "现代密码学", "商用密码", "密码技术", "密码算法", "密码协议",
+        "cryptography", "cryptographic"
+      ],
+      "excluded_phrases": ["密码子"],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["LAW-CRYPT-2019", "PAPER-INFOSEC-2019"]
+    },
+    {
+      "concept_id": "TECH-ENCRYPTION",
+      "category": "technical",
+      "canonical_term": "加密基础",
+      "variants": [
+        "加密", "解密", "密文", "对称加密", "非对称加密", "公钥加密",
+        "私钥加密", "分组密码", "流密码", "端到端加密", "传输加密", "存储加密",
+        "数据库加密", "encryption", "decryption", "ciphertext"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["LAW-CRYPT-2019", "REG-NDS-2024", "PAPER-CLOUDSEC-2021"]
+    },
+    {
+      "concept_id": "TECH-PLAINTEXT",
+      "category": "technical",
+      "canonical_term": "密码学明文",
+      "variants": ["明文"],
+      "match_policy": {"mode": "cooccurrence", "required_any": ["CTX-CRYPTOGRAPHY"]},
+      "source_ids": ["LAW-CRYPT-2019", "METH-BESSEN-HUNT-2007"]
+    },
+    {
+      "concept_id": "TECH-HASH-SIGNATURE",
+      "category": "technical",
+      "canonical_term": "散列与认证",
+      "variants": [
+        "哈希", "散列", "密码杂凑", "消息摘要", "消息认证码", "HMAC", "数字签名",
+        "环签名", "群签名", "盲签名", "聚合签名", "门限签名", "可验证随机函数"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["LAW-CRYPT-2019", "PAPER-INFOSEC-2019"]
+    },
+    {
+      "concept_id": "TECH-KEY-CERTIFICATE",
+      "category": "technical",
+      "canonical_term": "密钥与证书",
+      "variants": [
+        "密钥生成", "密钥派生", "密钥管理", "密钥分发", "密钥交换", "密钥协商",
+        "密钥托管", "密钥轮换", "密钥撤销", "公钥基础设施", "PKI", "数字证书",
+        "证书认证", "密钥封装机制", "KEM", "key agreement", "key management"
+      ],
+      "match_policy": {"mode": "phrase_family"},
+      "source_ids": ["LAW-CRYPT-2019", "PAPER-CLOUDSEC-2021"]
+    },
+    {
+      "concept_id": "TECH-ADVANCED-CRYPTO",
+      "category": "technical",
+      "canonical_term": "新型密码技术",
+      "variants": [
+        "后量子密码", "抗量子密码", "格密码", "基于格的密码", "量子密钥分发",
+        "属性加密", "基于身份加密", "广播加密", "函数加密", "保留格式加密", "代理重加密"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["LAW-CRYPT-2019", "PAPER-CLOUDSEC-2021"]
+    },
+    {
+      "concept_id": "TECH-PRIVACY-COMPUTING",
+      "category": "technical",
+      "canonical_term": "隐私计算",
+      "variants": [
+        "隐私计算", "隐私保护计算", "同态加密", "全同态加密", "半同态加密", "密态计算",
+        "密文计算", "安全多方计算", "多方安全计算", "安全两方计算", "秘密共享",
+        "混淆电路", "不经意传输", "homomorphic encryption", "secure multi-party computation"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["PAPER-PRIVML-2020", "PAPER-CLOUDSEC-2021"]
+    },
+    {
+      "concept_id": "TECH-PRIVACY-PROTOCOL",
+      "category": "technical",
+      "canonical_term": "隐私协议与隐私保护学习",
+      "variants": [
+        "差分隐私", "本地差分隐私", "联邦学习", "横向联邦学习", "纵向联邦学习",
+        "联邦建模", "安全聚合", "私有信息检索", "隐私信息检索", "私有集合求交",
+        "隐私集合求交", "零知识证明", "非交互零知识证明", "differential privacy",
+        "federated learning", "private information retrieval", "private set intersection", "zero-knowledge proof"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["PAPER-PRIVML-2020", "PAPER-CLOUDSEC-2021"]
+    },
+    {
+      "concept_id": "TECH-CIPHERTEXT-USE",
+      "category": "technical",
+      "canonical_term": "密文使用",
+      "variants": [
+        "可搜索加密", "对称可搜索加密", "非对称可搜索加密", "密文检索", "密文搜索",
+        "加密索引", "安全搜索", "安全外包计算", "可验证计算", "searchable encryption"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["PAPER-SEARCHENC-2015", "PAPER-DBSEC-2010"]
+    },
+    {
+      "concept_id": "TECH-DATA-ACCESS-CONTROL",
+      "category": "technical",
+      "canonical_term": "面向数据的访问控制",
+      "variants": [
+        "数据访问控制", "数据库访问控制", "细粒度访问控制", "基于角色的访问控制",
+        "基于属性的访问控制", "强制访问控制", "自主访问控制", "RBAC", "ABAC"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["REG-NDS-2024", "PAPER-CLOUDSEC-2021", "PAPER-DBSEC-2010"]
+    },
+    {
+      "concept_id": "TECH-GENERIC-ACCESS-CONTROL",
+      "category": "technical",
+      "canonical_term": "通用访问与授权控制",
+      "variants": ["访问控制", "权限控制", "权限管理", "授权策略", "越权检测", "最小权限", "零信任"],
+      "match_policy": {"mode": "cooccurrence", "required_any": ["CTX-DATA-OBJECT", "CTX-SECURITY-GOAL"]},
+      "source_ids": ["REG-NDS-2024", "PAPER-CLOUDSEC-2021"]
+    },
+    {
+      "concept_id": "TECH-IDENTITY-AUTHENTICATION",
+      "category": "technical",
+      "canonical_term": "身份鉴别与认证",
+      "variants": ["身份鉴别", "身份认证", "多因素认证", "双因素认证", "生物特征认证"],
+      "match_policy": {"mode": "cooccurrence", "required_any": ["CTX-DATA-OBJECT", "CTX-SECURITY-GOAL"]},
+      "source_ids": ["REG-NDS-2024", "LAW-PIPL-2021"]
+    },
+    {
+      "concept_id": "TECH-TRUSTED-EXECUTION",
+      "category": "technical",
+      "canonical_term": "可信执行与机密计算",
+      "variants": [
+        "可信执行环境", "TEE", "安全飞地", "secure enclave", "机密计算", "内存隔离",
+        "内存加密", "远程证明", "可信计算", "trusted execution environment", "confidential computing"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["PAPER-CLOUDSEC-2021", "PAPER-INFOSEC-2019"]
+    },
+    {
+      "concept_id": "TECH-INTEGRITY-VERIFICATION",
+      "category": "technical",
+      "canonical_term": "数据完整性验证",
+      "variants": [
+        "数据完整性验证", "存储完整性验证", "云存储完整性验证", "数据持有证明",
+        "可取回性证明", "挑战证明协议", "公开验证", "proof of data possession", "proof of retrievability"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["PAPER-INTEGRITY-2017", "PAPER-CLOUDSEC-2021"]
+    },
+    {
+      "concept_id": "TECH-AUDIT-INTEGRITY-GENERIC",
+      "category": "technical",
+      "canonical_term": "安全审计与通用完整性机制",
+      "variants": ["安全审计", "数据库审计", "日志审计", "默克尔树", "Merkle tree", "认证数据结构", "防篡改"],
+      "match_policy": {"mode": "cooccurrence", "required_any": ["CTX-DATA-OBJECT", "CTX-SECURITY-GOAL"]},
+      "source_ids": ["REG-NDS-2024", "PAPER-INTEGRITY-2017", "PAPER-DBSEC-2010"]
+    },
+    {
+      "concept_id": "TECH-PROVENANCE-DLP",
+      "category": "technical",
+      "canonical_term": "溯源与防泄漏",
+      "variants": [
+        "数据溯源", "数据血缘", "数据水印", "数字指纹", "数据库水印", "可追踪加密",
+        "泄漏追踪", "数据防泄漏", "外发管控", "敏感数据发现"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["LAW-DSL-2021", "REG-NDS-2024", "DOMAIN-ZHOU-2022"]
+    },
+    {
+      "concept_id": "TECH-DLP-ACRONYM",
+      "category": "technical",
+      "canonical_term": "数据防泄漏缩写",
+      "variants": ["DLP"],
+      "match_policy": {
+        "mode": "cooccurrence",
+        "required_any": ["CTX-SECURITY-GOAL", "CTX-DATA-THREAT"]
+      },
+      "source_ids": ["REG-NDS-2024", "METH-BESSEN-HUNT-2007"]
+    },
+    {
+      "concept_id": "TECH-DATA-RECOVERY",
+      "category": "technical",
+      "canonical_term": "数据可用性与恢复",
+      "variants": [
+        "数据备份", "加密备份", "备份恢复", "容灾备份", "灾难恢复", "数据恢复",
+        "勒索防护", "安全删除", "可信删除", "密码擦除"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["REG-NDS-2024", "STD-GB37988-2019"]
+    },
+    {
+      "concept_id": "TECH-SECURE-COMMUNICATION",
+      "category": "technical",
+      "canonical_term": "密码安全通信",
+      "variants": [
+        "安全信道", "TLS", "SSL", "IPsec", "端到端认证", "通信加密", "协议认证",
+        "防重放", "中间人攻击", "transport layer security"
+      ],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["LAW-CRYPT-2019", "REG-NDS-2024"]
+    },
+    {
+      "concept_id": "TECH-NEIGHBOR-CONTEXT",
+      "category": "technical",
+      "canonical_term": "邻近安全技术",
+      "variants": [
+        "区块链", "分布式账本", "智能合约", "数字水印", "备份", "防火墙", "入侵检测",
+        "异常检测", "网络安全", "通信安全", "VPN", "虚拟专用网络"
+      ],
+      "match_policy": {
+        "mode": "cooccurrence",
+        "required_any": ["CTX-SECURITY-GOAL", "CTX-DATA-THREAT"]
+      },
+      "source_ids": ["PAPER-INFOSEC-2019", "METH-MOELLER-MOEHRLE-2015"]
+    }
+  ],
+  "diagnostic_patterns": [
+    {
+      "id": "DIAG-PHYSICAL-SAFETY",
+      "kind": "neighbor_domain",
+      "variants": [
+        "安全生产", "生产安全", "施工安全", "行车安全", "驾驶安全", "食品安全",
+        "消防安全", "电气安全", "人身安全", "作业安全", "安全阀", "安全气囊", "安全带", "防爆装置"
+      ],
+      "source_ids": ["METH-BESSEN-HUNT-2007", "DOMAIN-ZHOU-2022"]
+    },
+    {
+      "id": "DIAG-BIOLOGICAL-CODON",
+      "kind": "lexical_ambiguity",
+      "variants": ["密码子"],
+      "source_ids": ["METH-BESSEN-HUNT-2007"]
+    }
+  ],
+  "ipc_audit_rules": [
+    {
+      "id": "IPC-AUDIT-G06F21",
+      "symbol": "G06F 21/00",
+      "match": "main_group",
+      "source_ids": ["METH-BENSON-MAGEE-2013", "WIPO-IPC-2026"]
+    },
+    {
+      "id": "IPC-AUDIT-H04L9",
+      "symbol": "H04L 9/00",
+      "match": "main_group",
+      "source_ids": ["METH-BENSON-MAGEE-2013", "WIPO-IPC-2026"]
+    },
+    {
+      "id": "IPC-AUDIT-H04L63",
+      "symbol": "H04L 63/00",
+      "match": "main_group",
+      "source_ids": ["METH-BENSON-MAGEE-2013", "WIPO-IPC-2026"]
+    },
+    {
+      "id": "IPC-AUDIT-G06Q20-38",
+      "symbol": "G06Q 20/38",
+      "match": "exact",
+      "source_ids": ["METH-BENSON-MAGEE-2013", "WIPO-IPC-2026"]
+    },
+    {
+      "id": "IPC-AUDIT-G06N20-20",
+      "symbol": "G06N 20/20",
+      "match": "exact",
+      "source_ids": ["METH-BENSON-MAGEE-2013", "WIPO-IPC-2026"]
+    }
+  ]
+}

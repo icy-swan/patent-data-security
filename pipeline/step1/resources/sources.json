@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0.0",
-  "source_manifest_version": "2.0.0-pilot.1",
+  "source_manifest_version": "2.0.0-pilot.2",
   "sources": [
     {
       "id": "METH-BESSEN-HUNT-2007",
@@ -54,6 +54,12 @@
       "type": "law",
       "citation": "中华人民共和国个人信息保护法",
       "url": "https://www.npc.gov.cn/npc/c2/c30834/202108/t20210820_313088.html"
+    },
+    {
+      "id": "LAW-CSL-2025",
+      "type": "law",
+      "citation": "中华人民共和国网络安全法（根据2025年10月28日修改决定修正，2026年1月1日起施行）",
+      "url": "https://flk.npc.gov.cn/detail?id=621d029681d4457ab5fc56ec7c7464a1&type=decision"
     },
     {
       "id": "REG-NDS-2024",
@@ -114,7 +120,15 @@
       "type": "patent_classification",
       "citation": "WIPO International Patent Classification, 2026 edition.",
       "url": "https://ipcpub.wipo.int/"
+    },
+    {
+      "id": "EXPERT-LEXICON-0715",
+      "type": "expert_curated_legal_keyword_lexicon",
+      "citation": "领域专家（经济学博士）整理. 数据安全法、个人信息保护法与网络安全法关键词（关键词0715）. 2026-07-15.",
+      "local_source_basename": "关键词0715.docx",
+      "file_sha256": "3f292cd7a15c3f8166dc829544569f65486a6139b6f099b0ac5342fc91de8217",
+      "derived_from": ["LAW-DSL-2021", "LAW-PIPL-2021", "LAW-CSL-2025"],
+      "provenance_note": "原 DOCX 不纳入仓库；生产词、上下文词和诊断词的纳入决策记录于 expert_keywords_0715.json。"
     }
   ]
 }
-

@@ -155,6 +155,40 @@ def test_generic_monitoring_is_not_positive_without_security_meaning() -> None:
     assert result.route == "E"
 
 
+def test_expert_legal_terms_are_merged_into_descriptive_concepts() -> None:
+    personal = matcher().match(
+        record(claim="对敏感个人信息执行分级处理", abstract="", title="", ipc="", main_ipc="")
+    )
+    cyber = matcher().match(
+        record(claim="检测网络攻击并定位系统漏洞", abstract="", title="", ipc="", main_ipc="")
+    )
+
+    assert personal.route == "S"
+    assert personal.keyword_hits[0].concept_id == "DESC-PERSONAL-DATA"
+    assert "EXPERT-LEXICON-0715" in personal.keyword_hits[0].source_ids
+    assert cyber.route == "S"
+    assert {hit.concept_id for hit in cyber.keyword_hits} == {"DESC-RISK"}
+
+
+def test_broad_expert_terms_do_not_become_standalone_positive_terms() -> None:
+    broad = matcher().match(
+        record(claim="数据库记录产品交易信息", abstract="", title="", ipc="", main_ipc="")
+    )
+    content = matcher().match(
+        record(claim="阻断传播虚假信息", abstract="", title="", ipc="", main_ipc="")
+    )
+    identity = matcher().match(
+        record(claim="根据取餐信息对用户进行身份识别", abstract="", title="", ipc="", main_ipc="")
+    )
+
+    assert broad.route == "E"
+    assert content.route == "E"
+    assert identity.route == "E"
+    assert {hit.pattern_id for hit in content.diagnostic_hits} == {
+        "DIAG-CONTENT-GOVERNANCE"
+    }
+
+
 def test_plaintext_requires_cryptographic_context() -> None:
     legal_phrase = matcher().match(
         record(claim="按照明文规定处理业务数据", abstract="", title="", ipc="", main_ipc="")

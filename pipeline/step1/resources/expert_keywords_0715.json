@@ -1,0 +1,124 @@
+{
+  "schema_version": "1.0.0",
+  "integration_version": "2026-07-15.1",
+  "source_id": "EXPERT-LEXICON-0715",
+  "status": "expert_seed_pending_empirical_validation",
+  "source_document": {
+    "basename": "关键词0715.docx",
+    "file_sha256": "3f292cd7a15c3f8166dc829544569f65486a6139b6f099b0ac5342fc91de8217",
+    "size_bytes": 17456,
+    "table_count": 1,
+    "source_row_count": 3,
+    "distinct_extracted_terms": 243,
+    "source_rows": [
+      {"legal_source": "《数据安全法》", "distinct_terms": 106},
+      {"legal_source": "《中华人民共和国个人信息保护法》", "distinct_terms": 59},
+      {"legal_source": "《中华人民共和国网络安全法》", "distinct_terms": 85}
+    ],
+    "extraction_note": "按 DOCX 表格单元格提取；行内重复词去重后，各行数量之和大于跨行去重总量。"
+  },
+  "integration_policy": [
+    "专家词表作为法规描述词的候选来源，与既有法规来源和论文技术词按 concept_id 合并，不建立第三种路由。",
+    "数据、信息、网络、病毒、名誉等高歧义单词不得直接产生 S；只进入上下文、诊断或待验证池。",
+    "已有父短语能够稳定覆盖的派生短语不机械重复。例如数据安全已经覆盖数据安全检测和数据安全评估。",
+    "所有本版新增词仍是等待人工开发集与留出集验证的专家种子词，不等于正式生产有效性证明。"
+  ],
+  "production_additions": [
+    {
+      "concept_id": "DESC-NETWORK-SECURITY",
+      "variants": ["网络安全"]
+    },
+    {
+      "concept_id": "DESC-PERSONAL-DATA",
+      "variants": ["个人信息", "敏感个人信息", "电子身份", "商业秘密"]
+    },
+    {
+      "concept_id": "DESC-RISK",
+      "variants": [
+        "数据风险", "数据漏洞", "信息漏洞", "数据非法获取", "数据非法利用", "数据非法使用",
+        "信息非法获取", "信息非法利用", "信息非法使用", "信息篡改", "信息破坏", "网络攻击",
+        "网络侵入", "网络干扰", "网络破坏", "网络侵害", "系统漏洞", "计算机病毒",
+        "防范恶意程序", "数据丧失功能", "窃取数据"
+      ]
+    },
+    {
+      "concept_id": "DESC-GOVERNANCE",
+      "variants": [
+        "数据分类", "数据分级", "数据治理", "数据跨境", "数据授权", "数据权限",
+        "信息分类分级", "信息跨境", "信息权限"
+      ]
+    },
+    {
+      "concept_id": "TECH-GENERIC-ACCESS-CONTROL",
+      "variants": ["访问授权", "访问权限", "权限设置"]
+    },
+    {
+      "concept_id": "TECH-IDENTITY-AUTHENTICATION",
+      "variants": ["可信身份"]
+    }
+  ],
+  "existing_concepts_with_added_provenance": [
+    "DESC-DOMAIN",
+    "DESC-DEIDENTIFICATION",
+    "DESC-GENERIC-CONTEXT",
+    "TECH-CRYPTOGRAPHY",
+    "TECH-ENCRYPTION",
+    "TECH-DATA-RECOVERY",
+    "TECH-NEIGHBOR-CONTEXT"
+  ],
+  "context_additions": [
+    {
+      "context_id": "CTX-DATA-OBJECT",
+      "variants": ["个人图像", "电子身份", "网络空间"]
+    },
+    {
+      "context_id": "CTX-SPECIFIC-DATA-OBJECT",
+      "variants": ["个人图像", "电子身份"]
+    },
+    {
+      "context_id": "CTX-SECURITY-GOAL",
+      "variants": ["数据完整", "数据可用", "数据可信", "可信身份"]
+    },
+    {
+      "context_id": "CTX-DATA-THREAT",
+      "variants": [
+        "数据漏洞", "信息漏洞", "数据非法获取", "数据非法利用", "数据非法使用",
+        "信息非法获取", "信息非法利用", "信息非法使用", "网络攻击", "网络侵入",
+        "系统漏洞", "计算机病毒"
+      ]
+    },
+    {
+      "context_id": "CTX-PROTECTION-ACTION",
+      "variants": [
+        "访问授权", "访问权限", "权限设置", "身份认证", "数据备份", "容灾备份", "数据恢复"
+      ]
+    }
+  ],
+  "diagnostic_additions": [
+    {
+      "pattern_id": "DIAG-CONTENT-GOVERNANCE",
+      "variants": ["虚假信息", "编造信息", "信息扰乱", "名誉", "阻断传播", "信息通报"]
+    },
+    {
+      "pattern_id": "DIAG-GENERIC-VIRUS",
+      "variants": ["病毒"]
+    }
+  ],
+  "not_promoted_examples": [
+    {
+      "reason": "过宽的数据或信息处理活动；单独出现不能证明数据安全语义",
+      "variants": [
+        "数据", "信息", "数据处理", "信息处理", "数据使用", "信息使用", "数据产品",
+        "数据交易", "数据培育", "数据科学", "数据时效", "信息时效", "数据库"
+      ]
+    },
+    {
+      "reason": "需要安全目标或保护动作才能消除身份、图像与一般系统管理歧义",
+      "variants": ["个人图像", "身份识别", "图像采集", "数据记录", "数据留存", "信息保存", "应急预案"]
+    },
+    {
+      "reason": "内容治理或一般语义，不直接等同于数据安全专利",
+      "variants": ["虚假信息", "编造信息", "信息扰乱", "名誉", "阻断传播", "信息通报", "病毒"]
+    }
+  ]
+}

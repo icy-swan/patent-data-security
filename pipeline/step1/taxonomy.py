@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,7 @@ class KeywordBundle:
 
     keywords: dict[str, Any]
     sources: dict[str, Any]
+    expert_keywords: dict[str, Any]
     validation_protocol: dict[str, Any]
     resource_dir: Path
     hashes: dict[str, str]
@@ -45,6 +47,7 @@ def load_keyword_bundle(directory: str | Path = DEFAULT_RESOURCE_DIR) -> Keyword
     paths = {
         "keywords": root / "keywords.json",
         "sources": root / "sources.json",
+        "expert_keywords": root / "expert_keywords_0715.json",
         "validation_protocol": root / "validation_protocol.json",
     }
     resource_paths = {**paths, "changelog": root / "CHANGELOG.md"}
@@ -52,11 +55,13 @@ def load_keyword_bundle(directory: str | Path = DEFAULT_RESOURCE_DIR) -> Keyword
     _validate_resources(
         values["keywords"],
         values["sources"],
+        values["expert_keywords"],
         values["validation_protocol"],
     )
     return KeywordBundle(
         keywords=values["keywords"],
         sources=values["sources"],
+        expert_keywords=values["expert_keywords"],
         validation_protocol=values["validation_protocol"],
         resource_dir=root,
         hashes={name: sha256_file(path) for name, path in resource_paths.items()},
@@ -74,6 +79,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _validate_resources(
     keywords: dict[str, Any],
     sources: dict[str, Any],
+    expert_keywords: dict[str, Any],
     validation_protocol: dict[str, Any],
 ) -> None:
     source_ids = {source["id"] for source in sources.get("sources", [])}
@@ -117,6 +123,8 @@ def _validate_resources(
         for item in keywords.get(section, []):
             _validate_source_ids(item.get("source_ids", []), source_ids, item["id"])
 
+    _validate_expert_integration(expert_keywords, keywords, source_ids)
+
     configured = keywords.get("matching", {}).get("context_window_chars")
     candidates = validation_protocol.get("context_window_candidates", [])
     if configured not in candidates:
@@ -136,6 +144,48 @@ def _validate_source_ids(values: list[str], known: set[str], owner: str) -> None
     missing = set(values) - known
     if missing:
         raise ValueError(f"Unknown source IDs for {owner}: {sorted(missing)}")
+
+
+def _validate_expert_integration(
+    expert_keywords: dict[str, Any],
+    keywords: dict[str, Any],
+    source_ids: set[str],
+) -> None:
+    source_id = str(expert_keywords.get("source_id", ""))
+    if source_id not in source_ids:
+        raise ValueError(f"Unknown expert keyword source ID: {source_id}")
+    sha256 = str(expert_keywords.get("source_document", {}).get("file_sha256", ""))
+    if not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        raise ValueError("Expert source document must have a lowercase SHA-256")
+
+    concept_variants = {
+        item["concept_id"]: {_normalize_variant(str(value)) for value in item["variants"]}
+        for item in keywords.get("concepts", [])
+    }
+    context_variants = {
+        item["id"]: {_normalize_variant(str(value)) for value in item["variants"]}
+        for item in keywords.get("context_lexicons", [])
+    }
+    diagnostic_variants = {
+        item["id"]: {_normalize_variant(str(value)) for value in item["variants"]}
+        for item in keywords.get("diagnostic_patterns", [])
+    }
+    for section, identifier_key, targets in (
+        ("production_additions", "concept_id", concept_variants),
+        ("context_additions", "context_id", context_variants),
+        ("diagnostic_additions", "pattern_id", diagnostic_variants),
+    ):
+        for item in expert_keywords.get(section, []):
+            identifier = item[identifier_key]
+            if identifier not in targets:
+                raise ValueError(f"Unknown expert integration target: {identifier}")
+            missing = {
+                _normalize_variant(str(value)) for value in item.get("variants", [])
+            } - targets[identifier]
+            if missing:
+                raise ValueError(
+                    f"Expert integration terms missing from {identifier}: {sorted(missing)}"
+                )
 
 
 def _normalize_variant(value: str) -> str:

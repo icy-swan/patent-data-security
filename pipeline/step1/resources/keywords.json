@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0.0",
-  "keyword_version": "2.0.0-pilot.1",
+  "keyword_version": "2.0.0-pilot.2",
   "methodology_version": "2.0.0-draft",
   "name": "中国数据安全专利 S/E 种子词表",
   "status": "pilot_not_empirically_validated",
@@ -22,9 +22,10 @@
       "variants": [
         "网络数据", "个人信息", "敏感个人信息", "重要数据", "核心数据", "敏感数据",
         "隐私数据", "用户数据", "业务数据", "训练数据", "模型参数", "数据库数据",
-        "日志数据", "云数据", "数据存储", "数据传输", "数据库", "数据集", "数据", "信息"
+        "日志数据", "云数据", "数据存储", "数据传输", "数据库", "数据集", "个人图像",
+        "电子身份", "网络空间", "数据", "信息"
       ],
-      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024"]
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "LAW-CSL-2025", "REG-NDS-2024", "EXPERT-LEXICON-0715"]
     },
     {
       "id": "CTX-SPECIFIC-DATA-OBJECT",
@@ -32,9 +33,10 @@
       "variants": [
         "网络数据", "个人信息", "敏感个人信息", "重要数据", "核心数据", "敏感数据",
         "隐私数据", "用户数据", "业务数据", "训练数据", "模型参数", "数据库数据",
-        "日志数据", "云数据", "数据存储", "数据传输", "数据库", "数据集", "电子记录"
+        "日志数据", "云数据", "数据存储", "数据传输", "数据库", "数据集", "电子记录",
+        "个人图像", "电子身份"
       ],
-      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024"]
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "LAW-CSL-2025", "REG-NDS-2024", "EXPERT-LEXICON-0715"]
     },
     {
       "id": "CTX-SECURITY-GOAL",
@@ -42,9 +44,10 @@
       "variants": [
         "数据安全", "信息安全", "个人信息保护", "隐私保护", "保密性", "机密性",
         "完整性", "可用性", "真实性", "可控性", "可审计性", "可追溯性",
-        "不可否认性", "安全认证", "安全保护"
+        "不可否认性", "安全认证", "安全保护", "数据完整", "数据可用", "数据可信",
+        "可信身份"
       ],
-      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "LAW-CRYPT-2019"]
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "LAW-CSL-2025", "LAW-CRYPT-2019", "EXPERT-LEXICON-0715"]
     },
     {
       "id": "CTX-DATA-THREAT",
@@ -52,18 +55,21 @@
       "variants": [
         "数据泄露", "信息泄露", "隐私泄露", "泄漏", "外泄", "窃取", "篡改",
         "破坏", "丢失", "非法获取", "非法利用", "未授权访问", "未经授权访问",
-        "越权访问", "数据滥用", "重识别", "推断攻击", "成员推断", "模型反演"
+        "越权访问", "数据滥用", "数据漏洞", "信息漏洞", "数据非法获取", "数据非法利用",
+        "数据非法使用", "信息非法获取", "信息非法利用", "信息非法使用", "网络攻击",
+        "网络侵入", "系统漏洞", "计算机病毒", "重识别", "推断攻击", "成员推断", "模型反演"
       ],
-      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024"]
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "LAW-CSL-2025", "REG-NDS-2024", "EXPERT-LEXICON-0715"]
     },
     {
       "id": "CTX-PROTECTION-ACTION",
       "kind": "protection_action",
       "variants": [
         "保护", "防护", "加密", "解密", "脱敏", "去标识化", "匿名化", "访问控制",
-        "权限控制", "完整性验证", "安全审计", "隔离", "备份", "恢复", "安全删除", "溯源"
+        "权限控制", "访问授权", "访问权限", "权限设置", "身份认证", "完整性验证",
+        "安全审计", "隔离", "备份", "数据备份", "容灾备份", "恢复", "数据恢复", "安全删除", "溯源"
       ],
-      "source_ids": ["LAW-PIPL-2021", "REG-NDS-2024", "STD-GB37988-2019"]
+      "source_ids": ["LAW-PIPL-2021", "LAW-CSL-2025", "REG-NDS-2024", "STD-GB37988-2019", "EXPERT-LEXICON-0715"]
     },
     {
       "id": "CTX-CRYPTOGRAPHY",
@@ -86,7 +92,23 @@
         "数据隐私", "隐私安全", "数据安全治理", "数据安全能力"
       ],
       "match_policy": {"mode": "standalone"},
-      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024"]
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024", "EXPERT-LEXICON-0715"]
+    },
+    {
+      "concept_id": "DESC-NETWORK-SECURITY",
+      "category": "descriptive",
+      "canonical_term": "网络安全领域名称",
+      "variants": ["网络安全"],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["LAW-CSL-2025", "EXPERT-LEXICON-0715"]
+    },
+    {
+      "concept_id": "DESC-PERSONAL-DATA",
+      "category": "descriptive",
+      "canonical_term": "个人与身份信息",
+      "variants": ["个人信息", "敏感个人信息", "电子身份", "商业秘密"],
+      "match_policy": {"mode": "standalone"},
+      "source_ids": ["LAW-PIPL-2021", "LAW-CSL-2025", "EXPERT-LEXICON-0715"]
     },
     {
       "concept_id": "DESC-RISK",
@@ -95,10 +117,14 @@
       "variants": [
         "数据泄露", "信息泄露", "隐私泄露", "数据篡改", "数据破坏", "数据毁损",
         "数据丢失", "数据窃取", "非法获取数据", "非法利用数据", "未授权访问",
-        "未经授权访问", "越权访问", "数据滥用", "重识别", "推断攻击", "成员推断", "模型反演"
+        "未经授权访问", "越权访问", "数据滥用", "数据风险", "数据漏洞", "信息漏洞",
+        "数据非法获取", "数据非法利用", "数据非法使用", "信息非法获取", "信息非法利用",
+        "信息非法使用", "信息篡改", "信息破坏", "网络攻击", "网络侵入", "网络干扰",
+        "网络破坏", "网络侵害", "系统漏洞", "计算机病毒", "防范恶意程序", "数据丧失功能",
+        "窃取数据", "重识别", "推断攻击", "成员推断", "模型反演"
       ],
       "match_policy": {"mode": "standalone"},
-      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "REG-NDS-2024"]
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "LAW-CSL-2025", "REG-NDS-2024", "EXPERT-LEXICON-0715"]
     },
     {
       "concept_id": "DESC-GOVERNANCE",
@@ -107,10 +133,12 @@
       "variants": [
         "数据分类分级", "数据安全风险评估", "数据安全审计", "数据安全监测",
         "数据安全预警", "数据安全事件", "数据安全应急", "个人信息保护影响评估",
-        "数据出境安全", "数据合规", "重要数据识别", "核心数据识别", "敏感数据识别"
+        "数据出境安全", "数据合规", "数据分类", "数据分级", "数据治理", "数据跨境",
+        "数据授权", "数据权限", "信息分类分级", "信息跨境", "信息权限",
+        "重要数据识别", "核心数据识别", "敏感数据识别"
       ],
       "match_policy": {"mode": "standalone"},
-      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "STD-GB37988-2019"]
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "LAW-CSL-2025", "STD-GB37988-2019", "EXPERT-LEXICON-0715"]
     },
     {
       "concept_id": "DESC-DEIDENTIFICATION",
@@ -121,7 +149,7 @@
         "隐私增强", "最小必要", "最小化处理"
       ],
       "match_policy": {"mode": "standalone"},
-      "source_ids": ["LAW-PIPL-2021", "REG-NDS-2024"]
+      "source_ids": ["LAW-PIPL-2021", "REG-NDS-2024", "EXPERT-LEXICON-0715"]
     },
     {
       "concept_id": "DESC-GENERIC-CONTEXT",
@@ -133,7 +161,7 @@
         "消防安全", "电气安全", "人身安全", "作业安全", "安全阀", "安全气囊", "安全带"
       ],
       "match_policy": {"mode": "cooccurrence", "required_any": ["CTX-SPECIFIC-DATA-OBJECT"]},
-      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "METH-BESSEN-HUNT-2007"]
+      "source_ids": ["LAW-DSL-2021", "LAW-PIPL-2021", "METH-BESSEN-HUNT-2007", "EXPERT-LEXICON-0715"]
     },
     {
       "concept_id": "TECH-CRYPTOGRAPHY",
@@ -145,7 +173,7 @@
       ],
       "excluded_phrases": ["密码子"],
       "match_policy": {"mode": "standalone"},
-      "source_ids": ["LAW-CRYPT-2019", "PAPER-INFOSEC-2019"]
+      "source_ids": ["LAW-CRYPT-2019", "PAPER-INFOSEC-2019", "EXPERT-LEXICON-0715"]
     },
     {
       "concept_id": "TECH-ENCRYPTION",
@@ -157,7 +185,7 @@
         "数据库加密", "encryption", "decryption", "ciphertext"
       ],
       "match_policy": {"mode": "standalone"},
-      "source_ids": ["LAW-CRYPT-2019", "REG-NDS-2024", "PAPER-CLOUDSEC-2021"]
+      "source_ids": ["LAW-CRYPT-2019", "REG-NDS-2024", "PAPER-CLOUDSEC-2021", "EXPERT-LEXICON-0715"]
     },
     {
       "concept_id": "TECH-PLAINTEXT",
@@ -252,17 +280,20 @@
       "concept_id": "TECH-GENERIC-ACCESS-CONTROL",
       "category": "technical",
       "canonical_term": "通用访问与授权控制",
-      "variants": ["访问控制", "权限控制", "权限管理", "授权策略", "越权检测", "最小权限", "零信任"],
+      "variants": [
+        "访问控制", "权限控制", "权限管理", "访问授权", "访问权限", "权限设置",
+        "授权策略", "越权检测", "最小权限", "零信任"
+      ],
       "match_policy": {"mode": "cooccurrence", "required_any": ["CTX-DATA-OBJECT", "CTX-SECURITY-GOAL"]},
-      "source_ids": ["REG-NDS-2024", "PAPER-CLOUDSEC-2021"]
+      "source_ids": ["LAW-CSL-2025", "REG-NDS-2024", "PAPER-CLOUDSEC-2021", "EXPERT-LEXICON-0715"]
     },
     {
       "concept_id": "TECH-IDENTITY-AUTHENTICATION",
       "category": "technical",
       "canonical_term": "身份鉴别与认证",
-      "variants": ["身份鉴别", "身份认证", "多因素认证", "双因素认证", "生物特征认证"],
+      "variants": ["身份鉴别", "身份认证", "可信身份", "多因素认证", "双因素认证", "生物特征认证"],
       "match_policy": {"mode": "cooccurrence", "required_any": ["CTX-DATA-OBJECT", "CTX-SECURITY-GOAL"]},
-      "source_ids": ["REG-NDS-2024", "LAW-PIPL-2021"]
+      "source_ids": ["REG-NDS-2024", "LAW-PIPL-2021", "LAW-CSL-2025", "EXPERT-LEXICON-0715"]
     },
     {
       "concept_id": "TECH-TRUSTED-EXECUTION",
@@ -325,7 +356,7 @@
         "勒索防护", "安全删除", "可信删除", "密码擦除"
       ],
       "match_policy": {"mode": "standalone"},
-      "source_ids": ["REG-NDS-2024", "STD-GB37988-2019"]
+      "source_ids": ["REG-NDS-2024", "STD-GB37988-2019", "LAW-CSL-2025", "EXPERT-LEXICON-0715"]
     },
     {
       "concept_id": "TECH-SECURE-COMMUNICATION",
@@ -344,13 +375,13 @@
       "canonical_term": "邻近安全技术",
       "variants": [
         "区块链", "分布式账本", "智能合约", "数字水印", "备份", "防火墙", "入侵检测",
-        "异常检测", "网络安全", "通信安全", "VPN", "虚拟专用网络"
+        "异常检测", "通信安全", "VPN", "虚拟专用网络"
       ],
       "match_policy": {
         "mode": "cooccurrence",
         "required_any": ["CTX-SECURITY-GOAL", "CTX-DATA-THREAT"]
       },
-      "source_ids": ["PAPER-INFOSEC-2019", "METH-MOELLER-MOEHRLE-2015"]
+      "source_ids": ["PAPER-INFOSEC-2019", "METH-MOELLER-MOEHRLE-2015", "LAW-CSL-2025", "EXPERT-LEXICON-0715"]
     }
   ],
   "diagnostic_patterns": [
@@ -368,6 +399,18 @@
       "kind": "lexical_ambiguity",
       "variants": ["密码子"],
       "source_ids": ["METH-BESSEN-HUNT-2007"]
+    },
+    {
+      "id": "DIAG-CONTENT-GOVERNANCE",
+      "kind": "neighbor_domain",
+      "variants": ["虚假信息", "编造信息", "信息扰乱", "名誉", "阻断传播", "信息通报"],
+      "source_ids": ["LAW-CSL-2025", "EXPERT-LEXICON-0715", "METH-BESSEN-HUNT-2007"]
+    },
+    {
+      "id": "DIAG-GENERIC-VIRUS",
+      "kind": "lexical_ambiguity",
+      "variants": ["病毒"],
+      "source_ids": ["LAW-CSL-2025", "EXPERT-LEXICON-0715", "METH-BESSEN-HUNT-2007"]
     }
   ],
   "ipc_audit_rules": [

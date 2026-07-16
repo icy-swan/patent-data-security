@@ -115,19 +115,35 @@ def run_simulation(
 
 
 def read_progress(paths: Step3Paths) -> dict[str, Any]:
+    progress: dict[str, Any] = {}
     if paths.progress.is_file():
-        return json.loads(paths.progress.read_text(encoding="utf-8"))
+        progress = json.loads(paths.progress.read_text(encoding="utf-8"))
     if not paths.database.is_file():
         return {"status": "not_prepared", "database": str(paths.database)}
     connection = _connect(paths.database)
-    counts = dict(connection.execute("SELECT status,COUNT(*) FROM tasks GROUP BY status"))
+    counts = Counter(dict(connection.execute("SELECT status,COUNT(*) FROM tasks GROUP BY status")))
+    running_row = connection.execute(
+        "SELECT MIN(updated_at) FROM tasks WHERE status='running'"
+    ).fetchone()
     connection.close()
     total = sum(counts.values())
-    return {
-        "total": total,
-        **counts,
-        "progress_percent": 0 if not total else counts.get("succeeded", 0) / total * 100,
-    }
+    progress.update(
+        {
+            "total": total,
+            "completed": counts["succeeded"],
+            "succeeded": counts["succeeded"],
+            "failed": counts["failed"],
+            "pending": total - counts["succeeded"],
+            "queued": counts["pending"],
+            "running": counts["running"],
+            "runner_active": _runner_active(paths.database),
+            "current_batch_started_at": running_row[0] if running_row else None,
+            "progress_percent": (
+                round(counts["succeeded"] / total * 100, 4) if total else 0
+            ),
+        }
+    )
+    return progress
 
 
 def _validate_identity(connection: sqlite3.Connection, client: CodexAnnotationClient) -> None:
@@ -268,6 +284,17 @@ def _has_retryable(connection: sqlite3.Connection, max_attempts: int) -> bool:
         ).fetchone()
         is not None
     )
+
+
+def _runner_active(database: Path) -> bool:
+    lock_path = database.with_name(database.name + ".run.lock")
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        return False
 
 
 @contextmanager

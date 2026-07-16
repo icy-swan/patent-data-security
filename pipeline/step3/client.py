@@ -138,7 +138,7 @@ class CodexAnnotationClient:
                 raise RuntimeError("codex exec completed without an output message")
             raw_response = output_path.read_text(encoding="utf-8")
 
-        parsed = CodexAnnotationBatch.model_validate_json(raw_response)
+        parsed = CodexAnnotationBatch.model_validate(_normalized_batch(raw_response))
         returned_ids = [item.sample_id for item in parsed.annotations]
         if Counter(returned_ids) != Counter(sample_ids):
             raise ValueError(
@@ -186,3 +186,31 @@ def _event_metadata(raw_events: str, requested_model: str) -> tuple[str, str, di
         if isinstance(model, str) and model:
             actual_model = model
     return response_id, actual_model, usage
+
+
+def _normalized_batch(raw_response: str) -> dict[str, Any]:
+    """Apply only deterministic Step 2 contract fixes before Pydantic validation."""
+
+    value = json.loads(raw_response)
+    annotations = value.get("annotations") if isinstance(value, dict) else None
+    if not isinstance(annotations, list):
+        return value
+    for annotation in annotations:
+        if not isinstance(annotation, dict):
+            continue
+        dimensions = ("scope_basis", "processing_activities", "industry_sectors")
+        for field in dimensions:
+            field_value = annotation.get(field)
+            if isinstance(field_value, list):
+                annotation[field] = list(dict.fromkeys(field_value))
+        if annotation.get("label") == "OTHER":
+            for field in dimensions:
+                annotation[field] = ["other"]
+        elif annotation.get("label") == "DATA_SECURITY":
+            for field in dimensions:
+                field_value = annotation.get(field)
+                if isinstance(field_value, list) and len(field_value) > 1:
+                    annotation[field] = [item for item in field_value if item != "other"]
+        if annotation.get("review_flag") is False and annotation.get("review_reason"):
+            annotation["review_reason"] = ""
+    return value

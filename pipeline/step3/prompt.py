@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.common.io import sha256_file
-from pipeline.step2.prompt import DYNAMIC_FIELDS
 from pipeline.step3.schema import IndependentAnnotation
 
 ANNOTATION_PROMPT_VERSION = "step3-independent-binary-v2.2.0"
 DEFAULT_PROMPT_PATH = Path(__file__).resolve().parent / "resources" / "annotation_prompt.txt"
+DYNAMIC_FIELDS = ("patent_id", "title", "abstract", "claim", "ipc", "main_ipc")
 
 
 @dataclass(frozen=True)

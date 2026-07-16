@@ -1,4 +1,4 @@
-"""Resumable concurrent runner and exporter for Step 3 model simulation."""
+"""Resumable local-Codex runner and exporter for Step 3 model simulation."""
 
 from __future__ import annotations
 
@@ -8,29 +8,29 @@ import sqlite3
 import time
 from collections import Counter
 from collections.abc import Callable, Iterator
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from pipeline.common.io import atomic_json_write
-from pipeline.step3.client import AnnotationResponse, OpenAIAnnotationClient
+from pipeline.step3.client import BatchAnnotationResponse, CodexAnnotationClient
 from pipeline.step3.sampling import Step3Paths, write_provisional_dataset
+from pipeline.step3.schema import IndependentAnnotation
 
 
 def run_simulation(
     paths: Step3Paths,
-    client: OpenAIAnnotationClient,
+    client: CodexAnnotationClient,
     *,
-    concurrency: int = 5,
+    batch_size: int = 20,
     max_attempts: int = 3,
     retry_delay_seconds: float = 2,
     stop_requested: Callable[[], bool] = lambda: False,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    if concurrency < 1:
-        raise ValueError("concurrency must be positive")
+    if not 1 <= batch_size <= 25:
+        raise ValueError("batch_size must be between 1 and 25")
     if max_attempts < 1:
         raise ValueError("max_attempts must be positive")
     started = time.monotonic()
@@ -44,7 +44,7 @@ def run_simulation(
             pending = connection.execute(
                 "SELECT * FROM tasks WHERE status IN ('pending','failed') AND attempts < ? "
                 "ORDER BY sample_id LIMIT ?",
-                (max_attempts, concurrency),
+                (max_attempts, batch_size),
             ).fetchall()
             if not pending:
                 break
@@ -55,37 +55,47 @@ def run_simulation(
                 [(_now(), sample_id) for sample_id in ids],
             )
             connection.commit()
-            with ThreadPoolExecutor(max_workers=concurrency) as executor:
-                futures: dict[Future[AnnotationResponse], sqlite3.Row] = {
-                    executor.submit(client.annotate, json.loads(row["payload_json"])): row
-                    for row in pending
-                }
-                for future in as_completed(futures):
-                    row = futures[future]
-                    try:
-                        response = future.result()
-                    except Exception as error:
-                        _record_failure(connection, row["sample_id"], error)
-                    else:
-                        _record_success(connection, row["sample_id"], response)
-                    connection.commit()
-                    progress = _progress(
+            payloads = []
+            for row in pending:
+                payload = json.loads(row["payload_json"])
+                payload["sample_id"] = row["sample_id"]
+                payloads.append(payload)
+            try:
+                response = client.annotate_batch(payloads)
+            except Exception as error:
+                for row in pending:
+                    _record_failure(connection, row["sample_id"], error)
+            else:
+                per_item_elapsed = response.elapsed_seconds / len(pending)
+                for index, row in enumerate(pending):
+                    sample_id = row["sample_id"]
+                    _record_success(
                         connection,
-                        client,
-                        concurrency=concurrency,
-                        started_at=started_at,
-                        elapsed=time.monotonic() - started,
+                        sample_id,
+                        response.annotations[sample_id],
+                        response,
+                        elapsed_seconds=per_item_elapsed,
+                        usage=response.usage if index == 0 else {},
+                        raw_response=response.raw_response if index == 0 else "",
                     )
-                    atomic_json_write(paths.progress, progress)
-                    if progress_callback:
-                        progress_callback(progress)
+            connection.commit()
+            progress = _progress(
+                connection,
+                client,
+                batch_size=batch_size,
+                started_at=started_at,
+                elapsed=time.monotonic() - started,
+            )
+            atomic_json_write(paths.progress, progress)
+            if progress_callback:
+                progress_callback(progress)
             if retry_delay_seconds and _has_retryable(connection, max_attempts):
                 time.sleep(retry_delay_seconds)
 
         progress = _progress(
             connection,
             client,
-            concurrency=concurrency,
+            batch_size=batch_size,
             started_at=started_at,
             elapsed=time.monotonic() - started,
         )
@@ -120,10 +130,11 @@ def read_progress(paths: Step3Paths) -> dict[str, Any]:
     }
 
 
-def _validate_identity(connection: sqlite3.Connection, client: OpenAIAnnotationClient) -> None:
+def _validate_identity(connection: sqlite3.Connection, client: CodexAnnotationClient) -> None:
     row = connection.execute("SELECT value FROM meta WHERE key='annotation_identity'").fetchone()
     identity = {
         "model": client.model,
+        "reasoning_effort": client.reasoning_effort,
         "prompt_version": client.prompt.version,
         "prompt_sha256": client.prompt.prompt_sha256,
         "schema_sha256": client.prompt.schema_sha256,
@@ -142,7 +153,12 @@ def _validate_identity(connection: sqlite3.Connection, client: OpenAIAnnotationC
 def _record_success(
     connection: sqlite3.Connection,
     sample_id: str,
-    response: AnnotationResponse,
+    annotation: IndependentAnnotation,
+    response: BatchAnnotationResponse,
+    *,
+    elapsed_seconds: float,
+    usage: dict[str, Any],
+    raw_response: str,
 ) -> None:
     connection.execute(
         """
@@ -159,10 +175,10 @@ def _record_success(
             response.prompt_sha256,
             response.schema_sha256,
             response.response_id,
-            response.annotation.model_dump_json(),
-            response.raw_response,
-            json.dumps(response.usage, ensure_ascii=False, separators=(",", ":")),
-            response.elapsed_seconds,
+            annotation.model_dump_json(),
+            raw_response,
+            json.dumps(usage, ensure_ascii=False, separators=(",", ":")),
+            elapsed_seconds,
             _now(),
             _now(),
             sample_id,
@@ -179,15 +195,15 @@ def _record_failure(connection: sqlite3.Connection, sample_id: str, error: Excep
 
 def _progress(
     connection: sqlite3.Connection,
-    client: OpenAIAnnotationClient,
+    client: CodexAnnotationClient,
     *,
-    concurrency: int,
+    batch_size: int,
     started_at: str,
     elapsed: float,
 ) -> dict[str, Any]:
     counts = Counter(dict(connection.execute("SELECT status,COUNT(*) FROM tasks GROUP BY status")))
     total = sum(counts.values())
-    completed = counts["succeeded"] + counts["failed"]
+    completed = counts["succeeded"]
     usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
     request_seconds = 0.0
     for row in connection.execute(
@@ -199,7 +215,7 @@ def _progress(
             usage[key] += int(values.get(key, 0) or 0)
     average = request_seconds / counts["succeeded"] if counts["succeeded"] else 0
     pending = total - completed
-    eta = pending * average / concurrency if average else None
+    eta = pending * average if average else None
     return {
         "schema_version": "2.2.0",
         "database": str(connection.execute("PRAGMA database_list").fetchone()[2]),
@@ -212,7 +228,7 @@ def _progress(
         "failed": counts["failed"],
         "pending": pending,
         "running": counts["running"],
-        "concurrency": concurrency,
+        "batch_size": batch_size,
         "progress_percent": round(completed / total * 100, 4) if total else 0,
         "run_started_at": started_at,
         "run_elapsed_seconds": round(elapsed, 3),

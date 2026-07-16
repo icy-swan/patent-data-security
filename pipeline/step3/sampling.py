@@ -17,8 +17,9 @@ from typing import Any
 from pipeline.common.io import atomic_json_write
 from pipeline.step2.schema import PatentClassification
 
-SAMPLING_VERSION = "step3-balanced-year-label-v2.2.0"
+SAMPLING_VERSION = "step3-positive-priority-hard-negative-v2.2.0"
 LABELS = ("DATA_SECURITY", "OTHER")
+SAMPLING_GROUPS = ("positive", "hard_negative")
 SPLITS = ("train", "validation", "test")
 SPLIT_RATIOS = {"train": 0.8, "validation": 0.1, "test": 0.1}
 
@@ -31,6 +32,7 @@ AUDIT_FIELDS = (
     "patent_id",
     "source_row_number",
     "sampling_stratum",
+    "sampling_group",
     "stratum_population",
     "stratum_sample_size",
     "step3_inclusion_probability",
@@ -97,6 +99,7 @@ DATASET_FIELDS = (
     "annotation_prompt_version",
     "gold_status",
     "eligible_for_final_evaluation",
+    "split_group_id",
     "data_split",
 )
 
@@ -104,13 +107,16 @@ DATASET_FIELDS = (
 @dataclass(frozen=True)
 class SamplingConfig:
     target_size: int = 4_000
-    positive_share: float = 0.5
-    seed: str = "step3-balanced-year-label-v2.2.0"
+    positive_size: int = 3_000
+    hard_negative_size: int = 1_000
+    seed: str = "step3-positive-priority-hard-negative-v2.2.0"
 
     @property
-    def label_targets(self) -> dict[str, int]:
-        positive = round(self.target_size * self.positive_share)
-        return {"DATA_SECURITY": positive, "OTHER": self.target_size - positive}
+    def group_targets(self) -> dict[str, int]:
+        return {
+            "positive": self.positive_size,
+            "hard_negative": self.hard_negative_size,
+        }
 
 
 @dataclass(frozen=True)
@@ -148,7 +154,11 @@ def step3_paths(output_dir: str | Path) -> Step3Paths:
 
 
 def discover_step2_databases(step2_dir: str | Path) -> list[Path]:
-    return sorted(Path(step2_dir).resolve().glob("step2_tasks_*.sqlite3"))
+    return sorted(
+        path
+        for path in Path(step2_dir).resolve().glob("step2_tasks_*.sqlite3")
+        if ".before_" not in path.name
+    )
 
 
 def prepare_sample(
@@ -158,7 +168,7 @@ def prepare_sample(
     config: SamplingConfig | None = None,
     rebuild: bool = False,
 ) -> tuple[Step3Paths, dict[str, Any]]:
-    """Freeze the balanced year-by-Step-2-label sample and blinded tasks."""
+    """Freeze the positive-priority year-balanced sample and blinded tasks."""
 
     config = config or SamplingConfig()
     _validate_config(config)
@@ -171,27 +181,30 @@ def prepare_sample(
 
     paths = step3_paths(output_dir)
     _prepare_output(paths, rebuild=rebuild)
-    records, source_summary, logical_digest = _load_population(database_paths)
+    all_records, source_summary, logical_digest = _load_population(database_paths)
+    records = [record for record in all_records if record["sampling_group"]]
     years = sorted({record["application_year"] for record in records})
-    capacities = Counter((record["application_year"], record["step2_label"]) for record in records)
+    capacities = Counter(
+        (record["application_year"], record["sampling_group"]) for record in records
+    )
 
     quotas: dict[tuple[str, str], int] = {}
-    for label, target in config.label_targets.items():
-        label_capacities = {year: capacities[(year, label)] for year in years}
+    for sampling_group, target in config.group_targets.items():
+        group_capacities = {year: capacities[(year, sampling_group)] for year in years}
         quotas.update(
             {
-                (year, label): value
+                (year, sampling_group): value
                 for year, value in _balanced_capacity_allocation(
-                    label_capacities,
+                    group_capacities,
                     target,
-                    seed=f"{config.seed}|{label}",
+                    seed=f"{config.seed}|{sampling_group}",
                 ).items()
             }
         )
 
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for record in records:
-        grouped[(record["application_year"], record["step2_label"])].append(record)
+        grouped[(record["application_year"], record["sampling_group"])].append(record)
 
     selected: list[dict[str, Any]] = []
     stratum_rows: list[dict[str, Any]] = []
@@ -207,11 +220,11 @@ def prepare_sample(
             ),
         )
         probability = quota / len(population)
-        year, label = stratum
+        year, sampling_group = stratum
         stratum_rows.append(
             {
                 "application_year": year,
-                "step2_label": label,
+                "sampling_group": sampling_group,
                 "population": len(population),
                 "sample": quota,
                 "inclusion_probability": probability,
@@ -224,7 +237,7 @@ def prepare_sample(
                     "sample_id": _sample_id(config.seed, row["dataset_id"], row["patent_id"]),
                     "sampling_version": SAMPLING_VERSION,
                     "sample_seed": config.seed,
-                    "sampling_stratum": f"year={year}|step2_label={label}",
+                    "sampling_stratum": f"year={year}|sampling_group={sampling_group}",
                     "stratum_population": len(population),
                     "stratum_sample_size": quota,
                     "step3_inclusion_probability": probability,
@@ -249,15 +262,23 @@ def prepare_sample(
         "schema_version": "2.2.0",
         "sampling_version": SAMPLING_VERSION,
         "target_size": config.target_size,
-        "label_targets": config.label_targets,
-        "year_allocation": "equal_within_step2_label_with_capacity_redistribution",
+        "sampling_group_targets": config.group_targets,
+        "positive_definition": "step2_label=DATA_SECURITY",
+        "hard_negative_definition": "step1_route=S and step2_label=OTHER",
+        "year_allocation": "equal_within_sampling_group_with_capacity_redistribution",
         "years": years,
         "seed": config.seed,
-        "population": len(records),
+        "step2_population": len(all_records),
+        "eligible_sampling_population": len(records),
         "population_by_step2_label": dict(
-            sorted(Counter(r["step2_label"] for r in records).items())
+            sorted(Counter(r["step2_label"] for r in all_records).items())
         ),
-        "sample_by_step2_label": dict(sorted(Counter(r["step2_label"] for r in selected).items())),
+        "eligible_population_by_sampling_group": dict(
+            sorted(Counter(r["sampling_group"] for r in records).items())
+        ),
+        "sample_by_sampling_group": dict(
+            sorted(Counter(r["sampling_group"] for r in selected).items())
+        ),
         "strata": stratum_rows,
         "logical_input_sha256": logical_digest,
         "step2_sources": source_summary,
@@ -305,6 +326,7 @@ def assign_exact_splits(
         n_test = test_quota[stratum]
         for index, row in enumerate(ranked):
             item = dict(row)
+            item["split_group_id"] = _text_group_id(item)
             if index < n_validation:
                 item["data_split"] = "validation"
             elif index < n_validation + n_test:
@@ -323,6 +345,7 @@ def assign_exact_splits(
             }
         )
 
+    _keep_text_groups_together(output, seed=seed)
     output.sort(key=lambda row: row["sample_id"])
     counts = Counter(row["data_split"] for row in output)
     expected = {"train": train_target, "validation": validation_target, "test": test_target}
@@ -347,7 +370,7 @@ def write_provisional_dataset(
         item = {
             **{field: row.get(field, "") for field in BLINDED_FIELDS[:9]},
             **annotation.model_dump(),
-            "annotation_source": "openai_model_simulation",
+            "annotation_source": "codex_model_simulation",
             "annotation_model": annotation_model,
             "annotation_prompt_version": annotation_prompt_version,
             "gold_status": "provisional_not_human_gold",
@@ -370,7 +393,7 @@ def write_provisional_dataset(
         {
             "schema_version": "2.2.0",
             "split_seed": split_seed,
-            "annotation_source": "openai_model_simulation",
+            "annotation_source": "codex_model_simulation",
             "annotation_model": annotation_model,
             "gold_status": "provisional_not_human_gold",
             "eligible_for_final_evaluation": False,
@@ -425,6 +448,7 @@ def _load_population(
                 "step2_selection_probability": float(row["selection_probability"]),
                 "step2_sample_weight": float(row["sample_weight"]),
                 "step2_label": result.label,
+                "sampling_group": _sampling_group(row["route"], result.label),
                 "step2_confidence": result.confidence,
                 "step2_review_flag": result.review_flag,
                 "step2_requested_model": row["requested_model"] or "",
@@ -460,6 +484,14 @@ def _load_population(
         )
         connection.close()
     return records, sources, digest.hexdigest()
+
+
+def _sampling_group(route: str, label: str) -> str:
+    if label == "DATA_SECURITY":
+        return "positive"
+    if route == "S" and label == "OTHER":
+        return "hard_negative"
+    return ""
 
 
 def _balanced_capacity_allocation(
@@ -510,10 +542,16 @@ def _proportional_quota(
 def _validate_config(config: SamplingConfig) -> None:
     if config.target_size < 10:
         raise ValueError("target_size must be at least 10")
-    if not 0 < config.positive_share < 1:
-        raise ValueError("positive_share must be strictly between 0 and 1")
-    if config.target_size != 4_000 or config.positive_share != 0.5:
-        raise ValueError("Step 3 v2.2.0 freezes target_size=4000 and positive_share=0.5")
+    if config.positive_size + config.hard_negative_size != config.target_size:
+        raise ValueError("positive_size + hard_negative_size must equal target_size")
+    if (
+        config.target_size != 4_000
+        or config.positive_size != 3_000
+        or config.hard_negative_size != 1_000
+    ):
+        raise ValueError(
+            "Step 3 v2.2.0 freezes 3,000 positives and 1,000 S-to-OTHER hard negatives"
+        )
 
 
 def _prepare_output(paths: Step3Paths, *, rebuild: bool) -> None:
@@ -622,6 +660,73 @@ def _dataset_row(row: Mapping[str, Any]) -> dict[str, Any]:
         )
         for field in DATASET_FIELDS
     }
+
+
+def _keep_text_groups_together(rows: list[dict[str, Any]], *, seed: str) -> None:
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        groups[row["split_group_id"]].append(row)
+    singleton_ids = {group_id for group_id, values in groups.items() if len(values) == 1}
+    for group_id in sorted(groups):
+        members = groups[group_id]
+        member_splits = Counter(row["data_split"] for row in members)
+        if len(member_splits) == 1:
+            continue
+        if len({row["label"] for row in members}) != 1:
+            raise ValueError(f"Exact-text duplicates have conflicting final labels: {group_id}")
+        target = min(
+            member_splits,
+            key=lambda split: (
+                -member_splits[split],
+                _stable_score(seed, group_id, split),
+            ),
+        )
+        for member in members:
+            origin = member["data_split"]
+            if origin == target:
+                continue
+            candidates = [
+                row
+                for row in rows
+                if row["data_split"] == target
+                and row["split_group_id"] in singleton_ids
+                and row["application_year"] == member["application_year"]
+                and row["label"] == member["label"]
+            ]
+            if not candidates:
+                candidates = [
+                    row
+                    for row in rows
+                    if row["data_split"] == target
+                    and row["split_group_id"] in singleton_ids
+                    and row["label"] == member["label"]
+                ]
+            if not candidates:
+                candidates = [
+                    row
+                    for row in rows
+                    if row["data_split"] == target and row["split_group_id"] in singleton_ids
+                ]
+            if not candidates:
+                raise ValueError(f"Cannot keep exact-text group together: {group_id}")
+            replacement = min(
+                candidates,
+                key=lambda row: _stable_score(seed, group_id, row["sample_id"]),
+            )
+            replacement["data_split"] = origin
+            member["data_split"] = target
+    for values in groups.values():
+        if len({row["data_split"] for row in values}) != 1:
+            raise AssertionError("An exact-text group crosses dataset splits")
+
+
+def _text_group_id(row: Mapping[str, Any]) -> str:
+    text = "\u241f".join(
+        " ".join(str(row.get(field, "") or "").split()) for field in ("title", "abstract", "claim")
+    )
+    if not text.strip("\u241f"):
+        return f"patent:{row['sample_id']}"
+    return "text:" + hashlib.sha256(text.encode()).hexdigest()
 
 
 def _write_csv(path: Path, fields: tuple[str, ...], rows: Iterable[Mapping[str, Any]]) -> None:

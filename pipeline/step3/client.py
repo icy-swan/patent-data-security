@@ -1,29 +1,27 @@
-"""OpenAI Responses client for provisional independent Step 3 annotation."""
+"""Local authenticated Codex CLI client for provisional Step 3 annotation."""
 
 from __future__ import annotations
 
 import json
-import os
+import shutil
+import subprocess
+import tempfile
 import time
-from collections.abc import Mapping
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from openai import OpenAI
-
-from pipeline.step3.prompt import (
-    AnnotationPrompt,
-    build_annotation_message,
-    load_annotation_prompt,
-)
-from pipeline.step3.schema import IndependentAnnotation
+from pipeline.step3.prompt import AnnotationPrompt, load_annotation_prompt
+from pipeline.step3.schema import CodexAnnotationBatch, IndependentAnnotation
 
 DEFAULT_MODEL = "gpt-5.6-sol"
 
 
 @dataclass(frozen=True)
-class AnnotationResponse:
-    annotation: IndependentAnnotation
+class BatchAnnotationResponse:
+    annotations: dict[str, IndependentAnnotation]
     response_id: str
     requested_model: str
     actual_model: str
@@ -33,85 +31,158 @@ class AnnotationResponse:
     elapsed_seconds: float
     usage: dict[str, Any]
     raw_response: str
+    raw_events: str
 
 
-class OpenAIAnnotationClient:
-    """Make one stored-disabled structured request for each blinded patent."""
+class CodexAnnotationClient:
+    """Run schema-constrained batches through the user's existing Codex login."""
 
     def __init__(
         self,
         *,
         model: str = DEFAULT_MODEL,
         reasoning_effort: str = "high",
-        api_key: str | None = None,
-        base_url: str | None = None,
-        timeout_seconds: float = 300,
+        workspace: str | Path,
         prompt: AnnotationPrompt | None = None,
-        client: OpenAI | None = None,
+        codex_binary: str | None = None,
+        timeout_seconds: float = 1_800,
     ) -> None:
-        key = api_key or os.getenv("OPENAI_API_KEY")
-        if client is None and not key:
-            raise ValueError("OPENAI_API_KEY is required for GPT-5.6 simulation")
+        binary = codex_binary or shutil.which("codex")
+        if not binary:
+            raise ValueError("codex CLI is required for keyless Step 3 simulation")
+        self.codex_binary = binary
         self.model = model
         self.reasoning_effort = reasoning_effort
+        self.workspace = Path(workspace).resolve()
         self.prompt = prompt or load_annotation_prompt()
-        self._client = client or OpenAI(
-            api_key=key,
-            base_url=base_url or os.getenv("OPENAI_BASE_URL"),
-            timeout=timeout_seconds,
+        self.timeout_seconds = timeout_seconds
+
+    def annotate_batch(
+        self,
+        patents: Sequence[Mapping[str, Any]],
+    ) -> BatchAnnotationResponse:
+        if not patents:
+            raise ValueError("A Codex annotation batch cannot be empty")
+        if len(patents) > 25:
+            raise ValueError("A Codex annotation batch cannot exceed 25 patents")
+        sample_ids = [str(patent["sample_id"]) for patent in patents]
+        if len(sample_ids) != len(set(sample_ids)):
+            raise ValueError("A Codex annotation batch contains duplicate sample_id values")
+
+        schema = CodexAnnotationBatch.model_json_schema()
+        input_rows = [
+            {
+                "sample_id": patent["sample_id"],
+                "title": patent.get("title", ""),
+                "abstract": patent.get("abstract", ""),
+                "claim": patent.get("claim", ""),
+                "ipc": patent.get("ipc", ""),
+                "main_ipc": patent.get("main_ipc", ""),
+            }
+            for patent in patents
+        ]
+        instruction = (
+            self.prompt.text
+            + "\n这是一个封闭的批量标注任务。不得调用任何工具，不得读取工作区文件，"
+            "不得搜索网络，也不得修改文件。逐条独立判断；不要让上一条专利影响下一条。"
+            "返回 annotations 数组，数量、sample_id 集合必须与输入完全一致。\n"
+            "<PATENTS>\n"
+            + json.dumps(input_rows, ensure_ascii=False, separators=(",", ":"))
+            + "\n</PATENTS>\n"
         )
 
-    def annotate(self, patent: Mapping[str, Any]) -> AnnotationResponse:
-        started = time.monotonic()
-        response = self._client.responses.parse(
-            model=self.model,
-            input=[
-                {"role": "system", "content": self.prompt.text},
-                {"role": "user", "content": build_annotation_message(patent)},
-            ],
-            text_format=IndependentAnnotation,
-            reasoning={"effort": self.reasoning_effort},
-            max_output_tokens=3_000,
-            store=False,
-        )
-        elapsed = time.monotonic() - started
-        annotation = response.output_parsed
-        if annotation is None:
-            refusal = _refusal_text(response)
-            raise ValueError(f"Response has no parsed annotation; refusal={refusal!r}")
-        usage = _model_dump(getattr(response, "usage", None))
-        return AnnotationResponse(
-            annotation=annotation,
-            response_id=str(getattr(response, "id", "")),
+        with tempfile.TemporaryDirectory(prefix="step3-codex-") as temporary:
+            temp = Path(temporary)
+            schema_path = temp / "schema.json"
+            output_path = temp / "answer.json"
+            schema_path.write_text(
+                json.dumps(schema, ensure_ascii=False, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            command = [
+                self.codex_binary,
+                "exec",
+                "--ephemeral",
+                "--ignore-user-config",
+                "--model",
+                self.model,
+                "--config",
+                f'model_reasoning_effort="{self.reasoning_effort}"',
+                "--sandbox",
+                "read-only",
+                "--cd",
+                str(self.workspace),
+                "--output-schema",
+                str(schema_path),
+                "--output-last-message",
+                str(output_path),
+                "--json",
+                "-",
+            ]
+            started = time.monotonic()
+            completed = subprocess.run(  # noqa: S603 - fixed authenticated local CLI
+                command,
+                input=instruction,
+                text=True,
+                capture_output=True,
+                timeout=self.timeout_seconds,
+                check=False,
+            )
+            elapsed = time.monotonic() - started
+            if completed.returncode != 0:
+                diagnostic = completed.stderr.strip() or completed.stdout.strip()
+                raise RuntimeError(
+                    f"codex exec failed with exit code {completed.returncode}: {diagnostic[-2000:]}"
+                )
+            if not output_path.is_file():
+                raise RuntimeError("codex exec completed without an output message")
+            raw_response = output_path.read_text(encoding="utf-8")
+
+        parsed = CodexAnnotationBatch.model_validate_json(raw_response)
+        returned_ids = [item.sample_id for item in parsed.annotations]
+        if Counter(returned_ids) != Counter(sample_ids):
+            raise ValueError(
+                "Codex batch returned a different sample_id multiset: "
+                f"expected={sample_ids}, actual={returned_ids}"
+            )
+        annotations = {
+            item.sample_id: IndependentAnnotation.model_validate(
+                item.model_dump(exclude={"sample_id"})
+            )
+            for item in parsed.annotations
+        }
+        response_id, actual_model, usage = _event_metadata(completed.stdout, self.model)
+        return BatchAnnotationResponse(
+            annotations=annotations,
+            response_id=response_id,
             requested_model=self.model,
-            actual_model=str(getattr(response, "model", self.model)),
+            actual_model=actual_model,
             prompt_version=self.prompt.version,
             prompt_sha256=self.prompt.prompt_sha256,
             schema_sha256=self.prompt.schema_sha256,
             elapsed_seconds=elapsed,
             usage=usage,
-            raw_response=_response_json(response),
+            raw_response=raw_response,
+            raw_events=completed.stdout,
         )
 
 
-def _model_dump(value: Any) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if hasattr(value, "model_dump"):
-        dumped = value.model_dump()
-        return dumped if isinstance(dumped, dict) else {}
-    return value if isinstance(value, dict) else {}
-
-
-def _response_json(response: Any) -> str:
-    if hasattr(response, "model_dump_json"):
-        return str(response.model_dump_json())
-    return json.dumps(_model_dump(response), ensure_ascii=False, default=str)
-
-
-def _refusal_text(response: Any) -> str:
-    for output in getattr(response, "output", []) or []:
-        for item in getattr(output, "content", []) or []:
-            if getattr(item, "type", "") == "refusal":
-                return str(getattr(item, "refusal", ""))
-    return ""
+def _event_metadata(raw_events: str, requested_model: str) -> tuple[str, str, dict[str, Any]]:
+    response_id = ""
+    actual_model = requested_model
+    usage: dict[str, Any] = {}
+    for line in raw_events.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") == "thread.started":
+            response_id = str(event.get("thread_id", ""))
+        if event.get("type") == "turn.completed":
+            value = event.get("usage")
+            if isinstance(value, dict):
+                usage = value
+        model = event.get("model")
+        if isinstance(model, str) and model:
+            actual_model = model
+    return response_id, actual_model, usage

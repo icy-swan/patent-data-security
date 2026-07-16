@@ -110,12 +110,113 @@ def test_client_uses_stable_prefix_and_observes_cache_usage() -> None:
     assert call["input"][0]["content"] == bundle.static_prefix
     assert "CN1" in call["input"][1]["content"]
     assert "prompt_cache_key" not in call
+    assert call["text"]["format"]["type"] == "json_schema"
+    assert call["text"]["format"]["strict"] is True
+    assert call["max_output_tokens"] == 4096
     assert result.classification.label == "DATA_SECURITY"
     assert result.classification.processing_activities == ["transmission"]
     assert result.classification.industry_sectors == ["telecommunications"]
     assert result.cached_tokens == 7000
     assert result.cache_hit_ratio == 0.875
-    assert result.cache_mode == "ark_responses_stable_prefix"
+    assert result.cache_mode == "ark_responses_structured_stable_prefix"
+
+
+def test_client_repairs_json_and_normalizes_only_schema_contracts() -> None:
+    value = valid_result()
+    value.update(
+        {
+            "label": "OTHER",
+            "scope_basis": ["cryptography"],
+            "processing_activities": ["storage"],
+            "industry_sectors": ["finance"],
+        }
+    )
+    malformed = json.dumps(value, ensure_ascii=False).replace(
+        '", "confidence"', '" "confidence"', 1
+    )
+    response = SimpleNamespace(
+        id="resp-repaired",
+        model="actual-model",
+        output_text=f"```json\n{malformed}\n```",
+        usage=None,
+    )
+    client = VolcengineArkClient(
+        model="requested-model",
+        prompt_bundle=load_prompt_bundle(),
+        client=SimpleNamespace(
+            responses=SimpleNamespace(create=lambda **_kwargs: response)
+        ),
+    )
+
+    result = client.classify({"patent_id": "CN1", "claim": "普通装置"})
+
+    assert result.classification.label == "OTHER"
+    assert result.classification.scope_basis == ["other"]
+    assert result.classification.processing_activities == ["other"]
+    assert result.classification.industry_sectors == ["other"]
+    assert "json_repair" in result.normalization_events
+    assert "other_contract:scope_basis" in result.normalization_events
+
+
+def test_client_clears_review_reason_when_review_is_false() -> None:
+    value = valid_result()
+    value["review_reason"] = "无需复核"
+    response = SimpleNamespace(
+        id="resp-review-contract",
+        model="actual-model",
+        output_text=json.dumps(value, ensure_ascii=False),
+        usage=None,
+    )
+    client = VolcengineArkClient(
+        model="requested-model",
+        prompt_bundle=load_prompt_bundle(),
+        client=SimpleNamespace(
+            responses=SimpleNamespace(create=lambda **_kwargs: response)
+        ),
+    )
+
+    result = client.classify({"patent_id": "CN1", "claim": "加密传输"})
+
+    assert result.classification.review_reason == ""
+    assert "clear_review_reason" in result.normalization_events
+
+
+def test_client_places_retry_instruction_in_separate_system_message() -> None:
+    calls = []
+    response = SimpleNamespace(
+        id="resp-retry-instruction",
+        model="actual-model",
+        output_text=json.dumps(valid_result(), ensure_ascii=False),
+        usage=None,
+    )
+    client = VolcengineArkClient(
+        model="requested-model",
+        prompt_bundle=load_prompt_bundle(),
+        client=SimpleNamespace(
+            responses=SimpleNamespace(
+                create=lambda **kwargs: calls.append(kwargs) or response
+            )
+        ),
+    )
+
+    result = client.classify(
+        {
+            "patent_id": "CN1",
+            "claim": "加密传输",
+            "_retry_output_instruction": "仅精简输出，不改变判定标准。",
+            "_retry_input_mode": "verbatim_excerpts",
+        }
+    )
+
+    assert [message["role"] for message in calls[0]["input"]] == [
+        "system",
+        "system",
+        "user",
+    ]
+    assert calls[0]["input"][1]["content"] == "仅精简输出，不改变判定标准。"
+    assert "_retry_output_instruction" not in calls[0]["input"][2]["content"]
+    assert "retry_output_instruction" in result.normalization_events
+    assert "retry_input_mode:verbatim_excerpts" in result.normalization_events
 
 
 def test_other_schema_cannot_claim_positive_scope() -> None:

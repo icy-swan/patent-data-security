@@ -237,6 +237,7 @@ def _initialize_database(connection: sqlite3.Connection) -> None:
             result_json TEXT,
             raw_response TEXT,
             usage_json TEXT,
+            normalization_json TEXT,
             cache_mode TEXT,
             prompt_tokens INTEGER,
             cached_tokens INTEGER,
@@ -249,6 +250,22 @@ def _initialize_database(connection: sqlite3.Connection) -> None:
             completed_at TEXT
         );
         CREATE INDEX idx_tasks_status ON tasks(status, source_row_number);
+        CREATE TABLE task_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT NOT NULL,
+            attempt_number INTEGER NOT NULL,
+            outcome TEXT NOT NULL CHECK(outcome IN ('succeeded','failed')),
+            response_id TEXT,
+            actual_model TEXT,
+            raw_response TEXT,
+            usage_json TEXT,
+            normalization_json TEXT,
+            error TEXT,
+            elapsed_seconds REAL NOT NULL,
+            completed_at TEXT NOT NULL,
+            FOREIGN KEY(task_id) REFERENCES tasks(task_id)
+        );
+        CREATE INDEX idx_task_attempts_task ON task_attempts(task_id, attempt_number);
         """
     )
     connection.commit()

@@ -9,5 +9,7 @@ data/step1/*
 !data/step1/.gitkeep
 data/step2/*
 !data/step2/.gitkeep
+data/step3/*
+!data/step3/.gitkeep
 *.partial
 *.partial.sqlite3

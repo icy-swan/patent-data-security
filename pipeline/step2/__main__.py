@@ -6,6 +6,8 @@ import argparse
 import json
 import os
 import signal
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +40,22 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--concurrency", type=int, default=10)
     run.add_argument("--max-attempts", type=int, default=3)
     run.add_argument("--retry-delay-seconds", type=float, default=2)
+    run.add_argument("--pid-file", type=Path, help=argparse.SUPPRESS)
+
+    start = subparsers.add_parser("start")
+    start.add_argument("--input", type=Path, required=True, help="Used to resolve dataset ID")
+    start.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "data" / "step2")
+    start.add_argument("--env-file", type=Path, default=PROJECT_ROOT / "v1" / ".env")
+    start.add_argument("--model")
+    start.add_argument("--base-url")
+    start.add_argument("--timeout-seconds", type=float, default=180)
+    start.add_argument("--concurrency", type=int, default=10)
+    start.add_argument("--max-attempts", type=int, default=3)
+    start.add_argument("--retry-delay-seconds", type=float, default=2)
+
+    stop = subparsers.add_parser("stop")
+    stop.add_argument("--input", type=Path, required=True, help="Used to resolve dataset ID")
+    stop.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "data" / "step2")
 
     status = subparsers.add_parser("status")
     status.add_argument("--input", type=Path, required=True)
@@ -65,8 +83,25 @@ def main() -> int:
         return 0
 
     paths = task_paths(args.output_dir, dataset_id(args.input))
+    if args.command == "start":
+        return _start_background(args, paths)
+    if args.command == "stop":
+        return _stop_background(paths)
     if args.command == "status":
-        print(json.dumps(read_progress(paths), ensure_ascii=False, indent=2))
+        pid_path, log_path = _runner_paths(paths)
+        pid = _read_pid(pid_path)
+        print(
+            json.dumps(
+                {
+                    "runner_pid": pid,
+                    "runner_active": bool(pid and _pid_is_running(pid)),
+                    "log": str(log_path),
+                    "progress": read_progress(paths),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return 0
     if not args.model:
         raise SystemExit("--model or ARK_MODEL is required")
@@ -79,16 +114,105 @@ def main() -> int:
         base_url=args.base_url,
         timeout_seconds=args.timeout_seconds,
     )
-    progress = run_tasks(
-        paths,
-        client,
-        max_attempts=args.max_attempts,
-        retry_delay_seconds=args.retry_delay_seconds,
-        concurrency=args.concurrency,
-        stop_requested=lambda: STOP_REQUESTED,
-        progress_callback=_print_progress,
+    try:
+        progress = run_tasks(
+            paths,
+            client,
+            max_attempts=args.max_attempts,
+            retry_delay_seconds=args.retry_delay_seconds,
+            concurrency=args.concurrency,
+            stop_requested=lambda: STOP_REQUESTED,
+            progress_callback=_print_progress,
+        )
+        print(json.dumps(progress, ensure_ascii=False, indent=2))
+    finally:
+        _remove_own_pid_file(args.pid_file)
+    return 0
+
+
+def _start_background(args: argparse.Namespace, paths: Any) -> int:
+    pid_path, log_path = _runner_paths(paths)
+    existing_pid = _read_pid(pid_path)
+    if existing_pid and _pid_is_running(existing_pid):
+        raise SystemExit(f"Step 2 is already running with PID {existing_pid}")
+    if not paths.database.is_file():
+        raise SystemExit(f"Prepared Step 2 database does not exist: {paths.database}")
+
+    environment = os.environ.copy()
+    environment.update(_read_env_file(args.env_file))
+    model = args.model or environment.get("ARK_MODEL")
+    base_url = args.base_url or environment.get("ARK_BASE_URL") or ARK_BASE_URL
+    if not environment.get("ARK_API_KEY"):
+        raise SystemExit(f"ARK_API_KEY is missing from environment and {args.env_file}")
+    if not model:
+        raise SystemExit(f"ARK_MODEL is missing from arguments, environment and {args.env_file}")
+    environment["ARK_MODEL"] = model
+    environment["ARK_BASE_URL"] = base_url
+    environment["PYTHONPATH"] = str(PROJECT_ROOT)
+
+    command = [
+        sys.executable,
+        "-m",
+        "pipeline.step2",
+        "run",
+        "--input",
+        str(args.input.resolve()),
+        "--output-dir",
+        str(args.output_dir.resolve()),
+        "--model",
+        model,
+        "--base-url",
+        base_url,
+        "--timeout-seconds",
+        str(args.timeout_seconds),
+        "--concurrency",
+        str(args.concurrency),
+        "--max-attempts",
+        str(args.max_attempts),
+        "--retry-delay-seconds",
+        str(args.retry_delay_seconds),
+        "--pid-file",
+        str(pid_path),
+    ]
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as log_file:
+        process = subprocess.Popen(  # noqa: S603 - fixed local module invocation
+            command,
+            cwd=PROJECT_ROOT,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    pid_path.write_text(f"{process.pid}\n", encoding="utf-8")
+    print(
+        json.dumps(
+            {
+                "runner_pid": process.pid,
+                "model": model,
+                "base_url": base_url,
+                "concurrency": args.concurrency,
+                "log": str(log_path),
+                "pid_file": str(pid_path),
+                "progress": str(paths.progress),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
     )
-    print(json.dumps(progress, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _stop_background(paths: Any) -> int:
+    pid_path, _ = _runner_paths(paths)
+    pid = _read_pid(pid_path)
+    if not pid or not _pid_is_running(pid):
+        print("Step 2 is not running.")
+        pid_path.unlink(missing_ok=True)
+        return 0
+    os.kill(pid, signal.SIGTERM)
+    print(f"Sent SIGTERM to Step 2 PID {pid}; in-flight requests will finish before exit.")
     return 0
 
 
@@ -118,6 +242,59 @@ def _format_duration(seconds: float) -> str:
     hours, remainder = divmod(total, 3600)
     minutes, secs = divmod(remainder, 60)
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def _runner_paths(paths: Any) -> tuple[Path, Path]:
+    dataset = paths.database.stem.removeprefix("step2_tasks_")
+    root = paths.database.parent
+    return root / f"step2_run_{dataset}.pid", root / f"step2_run_{dataset}.log"
+
+
+def _read_pid(path: Path) -> int | None:
+    if not path.is_file():
+        return None
+    try:
+        return int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _pid_is_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _remove_own_pid_file(path: Path | None) -> None:
+    if path is None or _read_pid(path) != os.getpid():
+        return
+    path.unlink(missing_ok=True)
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    if not path.is_file():
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        if key:
+            values[key] = value
+    return values
 
 
 def _paths_json(paths: Any) -> dict[str, str]:

@@ -9,6 +9,7 @@ description = "Auditable S/E routing for Chinese data-security patents."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "json-repair>=0.61,<0.62",
   "openai>=1.68,<3",
   "pydantic>=2.8,<3",
   "pyahocorasick>=2.1,<3",

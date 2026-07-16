@@ -16,7 +16,11 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.common.io import atomic_json_write
-from pipeline.step2.client import ClassificationResponse, VolcengineArkClient
+from pipeline.step2.client import (
+    ClassificationOutputError,
+    ClassificationResponse,
+    VolcengineArkClient,
+)
 from pipeline.step2.tasks import Step2TaskPaths
 
 RESULT_FIELDS = (
@@ -48,6 +52,7 @@ RESULT_FIELDS = (
     "reason",
     "review_flag",
     "review_reason",
+    "normalization_events",
     "cache_mode",
     "prompt_tokens",
     "cached_tokens",
@@ -80,6 +85,7 @@ def run_tasks(
     with _exclusive_lock(paths.database):
         connection = _connect(paths.database)
         try:
+            _ensure_runtime_schema(connection)
             _validate_prompt_identity(connection, client)
             connection.execute("UPDATE tasks SET status='pending' WHERE status='running'")
             connection.commit()
@@ -130,6 +136,7 @@ def export_results(
 ) -> None:
     own_connection = connection is None
     connection = connection or _connect(paths.database)
+    _ensure_runtime_schema(connection)
     temporary = paths.results.with_suffix(paths.results.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=RESULT_FIELDS)
@@ -292,14 +299,50 @@ def _persist_outcome(
 ) -> str:
     if isinstance(outcome, Exception):
         status = "failed" if attempts >= max_attempts else "pending"
+        raw_text = ""
+        response_id = ""
+        actual_model = ""
+        usage: dict[str, Any] = {}
+        normalization_events: tuple[str, ...] = ()
+        if isinstance(outcome, ClassificationOutputError):
+            raw_text = outcome.raw_text
+            response_id = outcome.response_id
+            actual_model = outcome.actual_model
+            usage = outcome.usage
+            normalization_events = outcome.normalization_events
+        error_text = f"{type(outcome).__name__}: {outcome}"[:2000]
+        usage_json = json.dumps(usage, ensure_ascii=False, separators=(",", ":"))
+        normalization_json = json.dumps(
+            normalization_events, ensure_ascii=False, separators=(",", ":")
+        )
+        _insert_attempt(
+            connection,
+            task_id=task["task_id"],
+            attempt_number=attempts,
+            outcome="failed",
+            response_id=response_id,
+            actual_model=actual_model,
+            raw_response=raw_text,
+            usage_json=usage_json,
+            normalization_json=normalization_json,
+            error=error_text,
+            elapsed_seconds=elapsed,
+        )
         connection.execute(
             """
-            UPDATE tasks SET status=?, error=?, elapsed_seconds=elapsed_seconds+?,
+            UPDATE tasks SET status=?, actual_model=COALESCE(NULLIF(?,''),actual_model),
+              response_id=COALESCE(NULLIF(?,''),response_id), raw_response=?, usage_json=?,
+              normalization_json=?, error=?, elapsed_seconds=elapsed_seconds+?,
               updated_at=?, completed_at=? WHERE task_id=?
             """,
             (
                 status,
-                f"{type(outcome).__name__}: {outcome}"[:2000],
+                actual_model,
+                response_id,
+                raw_text,
+                usage_json,
+                normalization_json,
+                error_text,
                 elapsed,
                 _now(),
                 _now() if status == "failed" else None,
@@ -307,13 +350,31 @@ def _persist_outcome(
             ),
         )
     else:
+        usage_json = json.dumps(outcome.usage, ensure_ascii=False, separators=(",", ":"))
+        normalization_json = json.dumps(
+            outcome.normalization_events, ensure_ascii=False, separators=(",", ":")
+        )
+        _insert_attempt(
+            connection,
+            task_id=task["task_id"],
+            attempt_number=attempts,
+            outcome="succeeded",
+            response_id=outcome.response_id,
+            actual_model=outcome.actual_model,
+            raw_response=outcome.raw_text,
+            usage_json=usage_json,
+            normalization_json=normalization_json,
+            error=None,
+            elapsed_seconds=elapsed,
+        )
         connection.execute(
             """
             UPDATE tasks SET status='succeeded', actual_model=?, prompt_version=?,
               prefix_sha256=?, law_sha256=?, schema_sha256=?, response_id=?,
-              result_json=?, raw_response=?, usage_json=?, cache_mode=?, prompt_tokens=?,
-              cached_tokens=?, cache_write_tokens=?, cache_hit_ratio=?, error=NULL,
-              elapsed_seconds=elapsed_seconds+?, updated_at=?, completed_at=?
+              result_json=?, raw_response=?, usage_json=?, normalization_json=?,
+              cache_mode=?, prompt_tokens=?, cached_tokens=?, cache_write_tokens=?,
+              cache_hit_ratio=?, error=NULL, elapsed_seconds=elapsed_seconds+?,
+              updated_at=?, completed_at=?
             WHERE task_id=?
             """,
             (
@@ -325,7 +386,8 @@ def _persist_outcome(
                 outcome.response_id,
                 outcome.classification.model_dump_json(),
                 outcome.raw_text,
-                json.dumps(outcome.usage, ensure_ascii=False, separators=(",", ":")),
+                usage_json,
+                normalization_json,
                 outcome.cache_mode,
                 outcome.prompt_tokens,
                 outcome.cached_tokens,
@@ -340,6 +402,43 @@ def _persist_outcome(
         status = "succeeded"
     connection.commit()
     return status
+
+
+def _insert_attempt(
+    connection: sqlite3.Connection,
+    *,
+    task_id: str,
+    attempt_number: int,
+    outcome: str,
+    response_id: str,
+    actual_model: str,
+    raw_response: str,
+    usage_json: str,
+    normalization_json: str,
+    error: str | None,
+    elapsed_seconds: float,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO task_attempts (
+          task_id, attempt_number, outcome, response_id, actual_model, raw_response,
+          usage_json, normalization_json, error, elapsed_seconds, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            task_id,
+            attempt_number,
+            outcome,
+            response_id,
+            actual_model,
+            raw_response,
+            usage_json,
+            normalization_json,
+            error,
+            elapsed_seconds,
+            _now(),
+        ),
+    )
 
 
 def _progress(
@@ -482,6 +581,7 @@ def _result_row(row: sqlite3.Row) -> dict[str, Any]:
         "reason": result.get("reason", ""),
         "review_flag": result.get("review_flag", ""),
         "review_reason": result.get("review_reason", ""),
+        "normalization_events": row["normalization_json"] or "[]",
         "cache_mode": row["cache_mode"] or "",
         "prompt_tokens": row["prompt_tokens"] if row["prompt_tokens"] is not None else "",
         "cached_tokens": row["cached_tokens"] if row["cached_tokens"] is not None else "",
@@ -518,6 +618,37 @@ def _connect(path: Path) -> sqlite3.Connection:
     connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA synchronous=FULL")
     return connection
+
+
+def _ensure_runtime_schema(connection: sqlite3.Connection) -> None:
+    columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(tasks)")
+    }
+    if "normalization_json" not in columns:
+        connection.execute("ALTER TABLE tasks ADD COLUMN normalization_json TEXT")
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS task_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT NOT NULL,
+            attempt_number INTEGER NOT NULL,
+            outcome TEXT NOT NULL CHECK(outcome IN ('succeeded','failed')),
+            response_id TEXT,
+            actual_model TEXT,
+            raw_response TEXT,
+            usage_json TEXT,
+            normalization_json TEXT,
+            error TEXT,
+            elapsed_seconds REAL NOT NULL,
+            completed_at TEXT NOT NULL,
+            FOREIGN KEY(task_id) REFERENCES tasks(task_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_attempts_task
+          ON task_attempts(task_id, attempt_number);
+        """
+    )
+    connection.commit()
 
 
 def _now() -> str:

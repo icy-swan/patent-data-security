@@ -303,9 +303,15 @@ def prepare_sample(
         "logical_input_sha256": logical_digest,
         "step2_sources": source_summary,
         "outputs": {key: str(value) for key, value in asdict(paths).items() if key != "root"},
-        "provisional_annotation_policy": {
+        "simulation_policy": {
             "simulation_is_human_gold": False,
-            "eligible_for_final_evaluation": False,
+            "eligible_for_training_splits": False,
+        },
+        "human_results_policy": {
+            "path": str(paths.results),
+            "label_field": "human_evaluation",
+            "allowed_values": ["true", "false"],
+            "result_fields": list(RESULT_FIELDS),
         },
         "prepared_at": _now(),
     }

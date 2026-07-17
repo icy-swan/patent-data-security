@@ -82,6 +82,8 @@ def main() -> int:
         print(json.dumps(read_progress(paths), ensure_ascii=False, indent=2))
         return 0
     if args.command == "finalize":
+        if not paths.results.is_file():
+            raise SystemExit(f"Missing human annotation file: {paths.results}")
         report = finalize_human_results(paths, split_seed=args.split_seed)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0

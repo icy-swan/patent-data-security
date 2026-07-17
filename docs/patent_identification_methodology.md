@@ -98,6 +98,11 @@ flowchart TB
     BLIND --> CODEX["开发期 Codex 模拟标注：非 Gold"]
     HUMAN --> SPLIT["按最终标签与年份分层切分 8:1:1"]
     CODEX --> PSPLIT["临时训练/验证/测试集：仅开发使用"]
+    SPLIT --> RDATA["Step 4：RoBERTa train/validation/test"]
+    PSPLIT --> RDATA
+    RDATA --> ROBERTA["validation accuracy 选模，Softmax argmax 测试"]
+    SPLIT --> SFT["MaaS messages JSONL：仅 train/validation"]
+    PSPLIT --> SFT
 ```
 
 ## 4. Step 1：关键词与上下文识别
@@ -754,7 +759,7 @@ cache_hit_ratio = cached_tokens / prompt_tokens
 ### 8.1 目标、输入与输出
 
 Step 3 的正式目标不是再次确认 Step 2 是否“看起来合理”，而是建立可用于 BERT 二分类训练、
-中等规模模型 SFT、阈值选择和最终评估的独立人工数据。抽样单位仍是唯一专利。
+中等规模模型 SFT、分类器选择和最终评估的独立人工数据。抽样单位仍是唯一专利。
 
 输入必须满足以下条件：
 
@@ -894,12 +899,120 @@ test = 400
 test。为保持完全相同文本同组，个别细分层允许偏离理想 8:1:1，但全局数量必须严格等于
 3,200/400/400。若未来补充专利族 ID，应以专利族作为更高优先级的切分组，防止同族泄漏。
 
-测试集一经发布即冻结，不参与 Prompt 修改、BERT 特征选择、SFT 训练、阈值选择或错误驱动的
+测试集一经发布即冻结，不参与 Prompt 修改、BERT 特征选择、SFT 训练、分类器选择或错误驱动的
 规则迭代；验证集用于上述开发选择，训练集用于参数拟合。
 
-## 9. v1 复用与重写边界
+## 9. Step 4：RoBERTa 分类模型与 MaaS SFT 数据
 
-### 9.1 直接复用的机制
+### 9.1 本阶段假设与输入冻结
+
+Step 4 假设 Step 3 的 4,000 条标签足以完成开发期模型训练，不在本阶段追加样本。输入直接使用
+Step 3 已冻结的 3,200/400/400 切分，不重新随机划分：
+
+| 集合 | 总数 | `DATA_SECURITY` | `OTHER` | 用途 |
+| --- | ---: | ---: | ---: | --- |
+| train | 3,200 | 2,444 | 756 | 参数训练 |
+| validation | 400 | 305 | 95 | 按 accuracy 选择 checkpoint |
+| test | 400 | 305 | 95 | 完成全部选择后的单次最终评估 |
+
+当前输入来自 Codex 模拟标注，因此 Step 4 manifest 必须继续保留
+`gold_status=provisional_not_human_gold`。程序默认拒绝该状态；本次已经明确批准的开发流程使用
+`--allow-provisional` 显式放行。未来用正式人工 Gold 替换相同的 Step 3 split 文件后，不再传入
+该参数，Step 4 代码与目录结构保持不变。
+
+数据准备必须重新验证：三个集合的精确数量、标签取值、`sample_id` 和 `patent_id` 全局唯一、
+每个集合同时含两个标签、`split_group_id` 不跨集合，以及名称、摘要、主权项规范化后完全相同的
+文本不跨集合。任何检查失败都中止，不生成部分训练数据。
+
+### 9.2 论文式 RoBERTa 有监督二分类
+
+皮淑雯等（2026）从百万级专利中抽取 10,000 条，由生成式模型自动标注后按 8:1:1 划分，使用
+8,000 条训练 RoBERTa 分类器、1,000 条验证集筛选分类器、1,000 条测试集报告精度；论文报告
+训练、验证和测试 accuracy 分别为 95.27%、91.12% 和 89.50%。论文图 1 另显示先用 500 条人工
+标注比较自动标注模型，并对 5,000 条做“全量核验”，但正文未进一步说明该 5,000 条与最终
+10,000 条数据的关系。
+
+本项目复用其核心流程，而不机械复制样本量：
+
+1. 基线模型为 `hfl/chinese-roberta-wwm-ext`，通过
+   `AutoModelForSequenceClassification` 增加二分类头；
+2. 默认只输入 patent abstract，与论文的专利摘要分类口径一致；代码允许把 title 和 claim
+   加入稳健性实验，但这类结果必须与摘要基线分开报告；
+3. `OTHER=0`、`DATA_SECURITY=1`，最大长度默认 512 token，动态 padding；
+4. 使用普通未加权交叉熵训练，不按 3:1 样本构成增加类别权重；
+5. 每个 epoch 在 validation 上评估并保存候选 checkpoint，严格按 validation accuracy
+   选择最优 checkpoint，不使用 Macro-F1 选模或 early stopping；
+6. 最优 checkpoint 冻结后以 Softmax argmax 直接分类，不在 validation 上重新选择概率阈值；
+7. 完成 checkpoint 选择后，分别计算最优模型在 train、validation、test 上的 accuracy，
+   其中 test 只评估一次，不得用测试错误反向修改模型。
+
+这条 RoBERTa 流程的目的仅是复刻前人研究中的传统分类方法，不承担不平衡优化，也不与 SFT
+争夺“最佳模型”。accuracy 是模型选择和继承论文结果的主指标。代码仍输出 balanced accuracy、
+Macro-F1、两类 Precision/Recall/F1、ROC-AUC、average precision 和混淆矩阵作为审计信息，
+但这些指标不参与 checkpoint 选择，不形成第二套模型，也不改变 Softmax argmax 分类结果。
+
+参考论文未披露具体中文 RoBERTa 基座 checkpoint、epoch、学习率、batch size、weight decay、
+warmup 和随机种子。本项目将这些值明确记录为可复现的实现参数，不能在论文中表述为原文参数；
+方法流程本身保持“摘要输入—未加权训练—validation accuracy 选模—test accuracy 报告”。
+
+### 9.3 MaaS SFT JSONL
+
+本地代码不负责 SFT 训练，只生成可上传 MaaS 的 train 和 validation JSONL。每行顶层严格只有
+`messages`，与提供的样例结构一致：
+
+```json
+{"messages":[{"role":"user","content":"任务规则与待判断专利"},{"role":"assistant","content":"DATA_SECURITY"}]}
+```
+
+user 内容包含固定版本的二分类规则，以及专利名称、摘要、主权项、IPC 和主 IPC。assistant 只
+输出 `DATA_SECURITY` 或 `OTHER`，不训练 Codex 生成的 confidence、reason 或 evidence，避免把
+模拟解释当成人工监督目标。JSONL 不含额外的 `sample_id` 顶层字段，以降低 MaaS 格式拒绝风险；
+独立 `index.csv` 记录 split、行号、`sample_id`、`patent_id`、标签和消息哈希供本地追溯。
+
+只生成 `sft/train.jsonl` 和 `sft/validation.jsonl`。测试集不生成 SFT 文件、不上传 MaaS，也不
+用于平台调参或 Prompt 修改。SFT 具体基座模型、训练参数、checkpoint 和部署均由用户在 MaaS
+平台管理，不属于本仓库 Step 4 代码范围。
+
+### 9.4 输出和命令
+
+Step 4 版本目录按数据、模型状态和报告分层：
+
+```text
+data/step4/data-security-binary-v1.0.0/
+├── dataset/
+│   ├── manifest.json
+│   ├── classifier/{train,validation,test}.jsonl
+│   └── sft/{train,validation}.jsonl + index.csv
+├── model/roberta/
+├── state/roberta/
+└── reports/roberta/
+    ├── metrics.json
+    ├── validation_predictions.csv
+    └── test_predictions.csv
+```
+
+```bash
+python -m pipeline.step4 prepare \
+  --step3-dir data/step3/positive-priority-v2.2.0 \
+  --output-dir data/step4/data-security-binary-v1.0.0 \
+  --allow-provisional
+
+python -m pip install -e '.[step4]'
+
+python -m pipeline.step4 train-roberta \
+  --output-dir data/step4/data-security-binary-v1.0.0 \
+  --model hfl/chinese-roberta-wwm-ext \
+  --text-fields abstract \
+  --epochs 4
+```
+
+`dataset/manifest.json` 保存全部源文件和输出文件 SHA-256、标签数、Prompt 版本、标注来源和
+provisional 放行状态；`reports/roberta/metrics.json` 保存基座模型、依赖版本、训练参数、最佳
+checkpoint、train/validation/test accuracy 和补充审计指标。
+
+## 10. v1 复用与重写边界
+
+### 10.1 直接复用的机制
 
 从 v1 复用并迁移测试的能力：
 
@@ -914,7 +1027,7 @@ test。为保持完全相同文本同组，个别细分层允许偏离理想 8:1
 9. 请求模型与实际返回模型的双重记录；
 10. 原子导出结果、进度、耗时和 usage。
 
-### 9.2 必须重写的部分
+### 10.2 必须重写的部分
 
 1. S/W/R/E 路由改为 S/E；
 2. 四文件输入改为一份带 `route` 字段的 Step 1 结果；
@@ -925,7 +1038,7 @@ test。为保持完全相同文本同组，个别细分层允许偏离理想 8:1
 7. 当前实现保留 V1 Responses 基线；显式 `common_prefix` 作为方舟专用可选适配器，须在模型支持和并发 smoke test 通过后再实现并启用；
 8. Step 2 任务准备改为全部唯一 S 加稳定 E 样本。
 
-## 10. 代码目录结构
+## 11. 代码目录结构
 
 新代码不再拆成顶层 `src/` 与 `scripts/`。生产代码、命令入口、资源和对应测试按步骤放进同一个 `pipeline/` 目录：
 
@@ -987,6 +1100,19 @@ pipeline/
       test_sampling.py
       test_prompt.py
 
+  step4/
+    __init__.py
+    __main__.py
+    data.py
+    metrics.py
+    train.py
+    README.md
+    resources/
+      sft_instruction.txt
+    tests/
+      test_data.py
+      test_metrics.py
+
 pyproject.toml
 README.md
 ```
@@ -1002,15 +1128,17 @@ python -m pipeline.step2 stop ...
 python -m pipeline.step3 prepare ...
 python -m pipeline.step3 simulate ...
 python -m pipeline.step3 status ...
+python -m pipeline.step4 prepare ...
+python -m pipeline.step4 train-roberta ...
 ```
 
 `pipeline/step3/README.md` 给出 4,000 条样本冻结、本机 Codex 模拟标注和断点续跑命令。
 第 5 节用于校准 Step 1 规则的开发集与留出验证仍属于 Step 1 方法本身，不与 Step 3 的
 最终训练/评估集混用。
 
-## 11. 验收标准
+## 12. 验收标准
 
-### 11.1 Step 1
+### 12.1 Step 1
 
 1. 只产生 `S/E` 两种路由；
 2. “密码学”“加密算法”“同态加密”即使没有“数据保护”字样也进入 `S`；
@@ -1025,7 +1153,7 @@ python -m pipeline.step3 status ...
 11. E 抽样按唯一专利、固定 seed 可重复；
 12. 不调用大模型。
 
-### 11.2 Step 2
+### 12.2 Step 2
 
 1. 密码学基础专利不再因缺少“核心保护目的”被判为负类；
 2. 只有普通数据处理或非数据安全语义的专利判为 `OTHER`；
@@ -1048,7 +1176,7 @@ eta_seconds = pending_tasks * average_completed_task_seconds / concurrency
 
 并发请求的累计耗时可以大于墙钟耗时；二者不得混为一个字段。首批请求尚未完成时 ETA 为 `null/unknown`，不得伪造估计值。
 
-### 11.3 Step 3
+### 12.3 Step 3
 
 1. 固定且只产生 4,000 条唯一专利样本；
 2. 抽样严格为 3,000 条 Step 2 `DATA_SECURITY` 和 1,000 条 `S→OTHER` 难负例；
@@ -1061,9 +1189,24 @@ eta_seconds = pending_tasks * average_completed_task_seconds / concurrency
 9. Codex 输出严格标记为 provisional，不能进入最终评估；
 10. 正式 Gold 对 10% 样本双标，并仲裁全部规定冲突；
 11. 最终全局切分严格为 3,200/400/400，且完全相同文本不跨数据集；
-12. 测试集冻结后不参与任何规则、Prompt、阈值或模型迭代。
+12. 测试集冻结后不参与任何规则、Prompt、分类器选择或模型迭代。
 
-## 12. 本版暂不决定的事项
+### 12.4 Step 4
+
+1. 只接受已经冻结且精确为 3,200/400/400 的 Step 3 split；
+2. 全局无重复 `sample_id`、`patent_id`，分组和完全相同文本均不跨集合；
+3. provisional 数据必须由 `--allow-provisional` 显式放行并写入 manifest；
+4. classifier JSONL 严格生成 train、validation、test 三份；
+5. MaaS SFT JSONL 只生成 train 和 validation，每行顶层只有 `messages`；
+6. SFT assistant 只监督最终二分类标签，不监督模拟解释或置信度；
+7. SFT 测试集不导出，测试数据不进入 MaaS；
+8. RoBERTa 默认只使用摘要，并记录 tokenizer、基座模型、长度和全部超参数；
+9. 使用未加权交叉熵，validation accuracy 选择 checkpoint，Softmax argmax 直接分类；
+10. train/validation/test accuracy 是论文复刻主指标，其他指标只作审计且不参与选模；
+11. 逐条 validation/test 预测能通过 `sample_id` 追溯；
+12. 所有输入、输出、Prompt 和最终模型报告均有版本或 SHA-256。
+
+## 13. 本版暂不决定的事项
 
 以下内容留到 Step 1/Step 2 实现并完成 pilot 后再确定：
 
@@ -1075,7 +1218,7 @@ eta_seconds = pending_tasks * average_completed_task_seconds / concurrency
 
 这些未决事项不会改变本版已经确定的两类路由、宽口径领域定义、双来源关键词体系和固定前缀缓存结构。
 
-## 13. 方法论参考文献
+## 14. 方法论参考文献
 
 1. Bessen, J., & Hunt, R. M. (2007). [An Empirical Look at Software Patents](https://doi.org/10.1111/j.1530-9134.2007.00136.x). *Journal of Economics & Management Strategy*, 16(1), 157–189.
 2. Benson, C. L., & Magee, C. L. (2013). [A hybrid keyword and patent class methodology for selecting relevant sets of patents for a technological field](https://doi.org/10.1007/s11192-012-0930-3). *Scientometrics*, 96(1), 69–82.
@@ -1083,3 +1226,4 @@ eta_seconds = pending_tasks * average_completed_task_seconds / concurrency
 4. Xie, Z., & Miyazaki, K. (2013). [Evaluating the effectiveness of keyword search strategy for patent identification](https://doi.org/10.1016/j.wpi.2012.10.005). *World Patent Information*, 35(1), 20–30.
 5. RAND Corporation. (2021). [An Open-Source Method for Assessing National Scientific and Technological Standing](https://www.rand.org/pubs/research_reports/RRA1482-3.html). RAND Corporation.
 6. 周伯慧、于乐、马禹昇、潘佳丽（2022）。[数据安全技术专利态势分析](https://doi.org/10.12267/j.issn.2096-5931.2022.07.013)。《信息通信技术与政策》，48(7)，87–91。
+7. 皮淑雯、丁凤塔、孟佶贤、杨晓光（2026）。《员工流失风险感知与企业劳动节约型创新》。《南开管理评论》，29(4)，113–124。

@@ -14,6 +14,7 @@ from pipeline.step3.runner import read_progress, run_simulation
 from pipeline.step3.sampling import (
     SamplingConfig,
     discover_step2_databases,
+    finalize_human_results,
     prepare_sample,
     step3_paths,
 )
@@ -50,6 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     status = subparsers.add_parser("status", help="Show simulation progress")
     status.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+
+    finalize = subparsers.add_parser(
+        "finalize", help="Validate dataset/results.csv and create clean 8:1:1 human splits"
+    )
+    finalize.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    finalize.add_argument("--split-seed", default="step3-human-split-v2.2.0")
     return parser
 
 
@@ -73,6 +80,10 @@ def main() -> int:
     paths = step3_paths(args.output_dir)
     if args.command == "status":
         print(json.dumps(read_progress(paths), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "finalize":
+        report = finalize_human_results(paths, split_seed=args.split_seed)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
     if not paths.database.is_file():
         raise SystemExit(f"Run prepare first; missing {paths.database}")

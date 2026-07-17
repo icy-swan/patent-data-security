@@ -20,6 +20,13 @@ dev = [
   "pytest>=8.2,<10",
   "ruff>=0.5,<1",
 ]
+step4 = [
+  "accelerate>=1,<2",
+  "datasets>=3,<5",
+  "numpy>=1.26,<3",
+  "torch>=2.2,<3",
+  "transformers>=4.48,<6",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -28,6 +35,7 @@ include = ["pipeline*"]
 [tool.setuptools.package-data]
 "pipeline.step1" = ["resources/*.json", "resources/*.md"]
 "pipeline.step2" = ["resources/*.json", "resources/*.txt"]
+"pipeline.step4" = ["resources/*.txt"]
 
 [tool.ruff]
 line-length = 100

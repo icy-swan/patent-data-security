@@ -15,7 +15,7 @@ from typing import Any
 
 from pipeline.common.io import atomic_json_write
 from pipeline.step3.client import BatchAnnotationResponse, CodexAnnotationClient
-from pipeline.step3.sampling import Step3Paths, write_provisional_dataset
+from pipeline.step3.sampling import Step3Paths, write_simulation_dataset
 from pipeline.step3.schema import IndependentAnnotation
 
 
@@ -102,10 +102,10 @@ def run_simulation(
         atomic_json_write(paths.progress, progress)
         if progress["succeeded"] == progress["total"]:
             rows = _completed_rows(connection)
-            progress["split_report"] = write_provisional_dataset(
+            progress.pop("split_report", None)
+            progress["simulation_summary"] = write_simulation_dataset(
                 paths,
                 rows,
-                split_seed="step3-split-v2.2.0",
                 annotation_model=client.model,
                 annotation_prompt_version=client.prompt.version,
             )

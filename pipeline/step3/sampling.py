@@ -12,10 +12,10 @@ from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
-from pipeline.common.io import atomic_json_write
-from pipeline.step2.schema import PatentClassification
+from pipeline.common.io import atomic_json_write, sha256_file
+from pipeline.step2.schema import IndustrySector, PatentClassification, ScopeBasis
 
 SAMPLING_VERSION = "step3-positive-priority-hard-negative-v2.2.0"
 LABELS = ("DATA_SECURITY", "OTHER")
@@ -73,7 +73,7 @@ BLINDED_FIELDS = (
     "submitted_at",
 )
 
-DATASET_FIELDS = (
+SIMULATION_FIELDS = (
     "sample_id",
     "dataset_id",
     "application_year",
@@ -99,8 +99,25 @@ DATASET_FIELDS = (
     "annotation_prompt_version",
     "gold_status",
     "eligible_for_final_evaluation",
-    "split_group_id",
-    "data_split",
+)
+
+FROZEN_RESULT_FIELDS = (
+    "sample_id",
+    "dataset_id",
+    "application_year",
+    "patent_id",
+    "title",
+    "abstract",
+    "claim",
+    "ipc",
+    "main_ipc",
+)
+
+RESULT_FIELDS = (
+    *FROZEN_RESULT_FIELDS,
+    "human_evaluation",
+    "scope_basis",
+    "industry_sectors",
 )
 
 
@@ -127,7 +144,8 @@ class Step3Paths:
     blinded: Path
     manifest: Path
     progress: Path
-    dataset: Path
+    simulation: Path
+    results: Path
     train: Path
     validation: Path
     test: Path
@@ -143,7 +161,8 @@ def step3_paths(output_dir: str | Path) -> Step3Paths:
         blinded=root / "sample" / "annotation_input.csv",
         manifest=root / "sample" / "manifest.json",
         progress=root / "state" / "progress.json",
-        dataset=root / "dataset" / "provisional.csv",
+        simulation=root / "dataset" / "simulation.csv",
+        results=root / "dataset" / "results.csv",
         train=root / "dataset" / "splits" / "train.csv",
         validation=root / "dataset" / "splits" / "validation.csv",
         test=root / "dataset" / "splits" / "test.csv",
@@ -355,15 +374,14 @@ def assign_exact_splits(
     return output, {"ratios": SPLIT_RATIOS, "counts": expected, "strata": report_strata}
 
 
-def write_provisional_dataset(
+def write_simulation_dataset(
     paths: Step3Paths,
     rows: list[dict[str, Any]],
     *,
-    split_seed: str,
     annotation_model: str,
     annotation_prompt_version: str,
 ) -> dict[str, Any]:
-    """Write model-simulated annotations and clearly non-gold split files."""
+    """Write the rich model-simulation audit file without creating training splits."""
 
     normalized: list[dict[str, Any]] = []
     for row in rows:
@@ -378,26 +396,114 @@ def write_provisional_dataset(
             "eligible_for_final_evaluation": False,
         }
         normalized.append(item)
-    assigned, report = assign_exact_splits(normalized, seed=split_seed)
+    _write_csv(
+        paths.simulation,
+        SIMULATION_FIELDS,
+        (_simulation_row(row) for row in normalized),
+    )
+    return {
+        "schema_version": "2.2.0",
+        "annotation_source": "codex_model_simulation",
+        "annotation_model": annotation_model,
+        "annotation_prompt_version": annotation_prompt_version,
+        "gold_status": "provisional_not_human_gold",
+        "eligible_for_training_splits": False,
+        "records": len(normalized),
+        "label_counts": dict(sorted(Counter(row["label"] for row in normalized).items())),
+        "output": str(paths.simulation),
+        "written_at": _now(),
+    }
 
-    _write_csv(paths.dataset, DATASET_FIELDS, (_dataset_row(row) for row in assigned))
-    by_split = {split: [row for row in assigned if row["data_split"] == split] for split in SPLITS}
-    _write_csv(paths.train, DATASET_FIELDS, (_dataset_row(row) for row in by_split["train"]))
+
+def finalize_human_results(
+    paths: Step3Paths,
+    *,
+    split_seed: str = "step3-human-split-v2.2.0",
+    expected_count: int = 4_000,
+) -> dict[str, Any]:
+    """Validate and sanitize human results.csv, then create minimal 8:1:1 splits."""
+
+    if not paths.results.is_file():
+        raise FileNotFoundError(f"Missing human annotation file: {paths.results}")
+    with paths.results.open(encoding="utf-8-sig", newline="") as file:
+        reader = csv.DictReader(file)
+        input_fields = tuple(reader.fieldnames or ())
+        missing = sorted(set(RESULT_FIELDS) - set(input_fields))
+        if missing:
+            raise ValueError(f"Human results.csv is missing fields: {missing}")
+        raw_rows = [dict(row) for row in reader]
+    if len(raw_rows) != expected_count:
+        raise ValueError(
+            f"Human results.csv must contain {expected_count} rows, found {len(raw_rows)}"
+        )
+
+    normalized: list[dict[str, Any]] = []
+    for row_number, row in enumerate(raw_rows, start=2):
+        evaluation = _parse_human_evaluation(row["human_evaluation"], row_number=row_number)
+        scope_basis = _parse_controlled_list(
+            row["scope_basis"],
+            field="scope_basis",
+            allowed=set(get_args(ScopeBasis)),
+            maximum=3,
+            row_number=row_number,
+        )
+        industry_sectors = _parse_controlled_list(
+            row["industry_sectors"],
+            field="industry_sectors",
+            allowed=set(get_args(IndustrySector)),
+            maximum=9,
+            row_number=row_number,
+        )
+        if not evaluation and scope_basis != ["other"]:
+            raise ValueError(f"Row {row_number}: false requires scope_basis=['other']")
+        if not evaluation and industry_sectors != ["other"]:
+            raise ValueError(f"Row {row_number}: false requires industry_sectors=['other']")
+        if evaluation and "other" in scope_basis:
+            raise ValueError(f"Row {row_number}: true cannot use scope_basis='other'")
+        item = {field: str(row.get(field, "") or "") for field in FROZEN_RESULT_FIELDS}
+        item.update(
+            {
+                "human_evaluation": evaluation,
+                "scope_basis": scope_basis,
+                "industry_sectors": industry_sectors,
+                "label": "DATA_SECURITY" if evaluation else "OTHER",
+            }
+        )
+        normalized.append(item)
+
+    _validate_human_result_identity(paths.blinded, normalized, expected_count=expected_count)
+    assigned, report = assign_exact_splits(normalized, seed=split_seed)
+    by_split = {
+        split: [row for row in assigned if row["data_split"] == split] for split in SPLITS
+    }
+
+    for path in (paths.results, paths.train, paths.validation, paths.test, paths.split_report):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    _write_csv(paths.results, RESULT_FIELDS, (_result_row(row) for row in assigned))
+    _write_csv(paths.train, RESULT_FIELDS, (_result_row(row) for row in by_split["train"]))
     _write_csv(
         paths.validation,
-        DATASET_FIELDS,
-        (_dataset_row(row) for row in by_split["validation"]),
+        RESULT_FIELDS,
+        (_result_row(row) for row in by_split["validation"]),
     )
-    _write_csv(paths.test, DATASET_FIELDS, (_dataset_row(row) for row in by_split["test"]))
+    _write_csv(paths.test, RESULT_FIELDS, (_result_row(row) for row in by_split["test"]))
     report.update(
         {
             "schema_version": "2.2.0",
+            "source": "human_results_csv",
+            "source_path": str(paths.results),
+            "source_sha256": sha256_file(paths.results),
             "split_seed": split_seed,
-            "annotation_source": "codex_model_simulation",
-            "annotation_model": annotation_model,
-            "gold_status": "provisional_not_human_gold",
-            "eligible_for_final_evaluation": False,
-            "label_counts": dict(sorted(Counter(row["label"] for row in assigned).items())),
+            "result_fields": list(RESULT_FIELDS),
+            "removed_input_fields": sorted(set(input_fields) - set(RESULT_FIELDS)),
+            "human_evaluation_mapping": {"true": "DATA_SECURITY", "false": "OTHER"},
+            "human_evaluation_counts": dict(
+                sorted(
+                    Counter(
+                        "true" if row["human_evaluation"] else "false" for row in assigned
+                    ).items()
+                )
+            ),
             "written_at": _now(),
         }
     )
@@ -652,7 +758,7 @@ def _blinded_row(row: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _dataset_row(row: Mapping[str, Any]) -> dict[str, Any]:
+def _simulation_row(row: Mapping[str, Any]) -> dict[str, Any]:
     json_fields = {"scope_basis", "processing_activities", "industry_sectors", "evidence"}
     return {
         field: (
@@ -660,8 +766,99 @@ def _dataset_row(row: Mapping[str, Any]) -> dict[str, Any]:
             if field in json_fields
             else row.get(field, "")
         )
-        for field in DATASET_FIELDS
+        for field in SIMULATION_FIELDS
     }
+
+
+def _result_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        field: (
+            "true"
+            if field == "human_evaluation" and bool(row.get(field))
+            else "false"
+            if field == "human_evaluation"
+            else json.dumps(row.get(field, []), ensure_ascii=False)
+            if field in {"scope_basis", "industry_sectors"}
+            else row.get(field, "")
+        )
+        for field in RESULT_FIELDS
+    }
+
+
+def _parse_human_evaluation(value: Any, *, row_number: int) -> bool:
+    normalized = str(value or "").strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise ValueError(
+        f"Row {row_number}: human_evaluation must be exactly true or false, got {value!r}"
+    )
+
+
+def _parse_controlled_list(
+    value: Any,
+    *,
+    field: str,
+    allowed: set[str],
+    maximum: int,
+    row_number: int,
+) -> list[str]:
+    try:
+        parsed = json.loads(str(value or ""))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Row {row_number}: {field} must be a JSON array") from exc
+    if not isinstance(parsed, list) or not parsed or len(parsed) > maximum:
+        raise ValueError(f"Row {row_number}: {field} must contain 1 to {maximum} values")
+    if any(not isinstance(item, str) or item not in allowed for item in parsed):
+        raise ValueError(f"Row {row_number}: {field} contains an invalid value: {parsed}")
+    if len(parsed) != len(set(parsed)):
+        raise ValueError(f"Row {row_number}: {field} contains duplicate values")
+    if "other" in parsed and parsed != ["other"]:
+        raise ValueError(f"Row {row_number}: {field} cannot mix 'other' with specific values")
+    return parsed
+
+
+def _validate_human_result_identity(
+    blinded_path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    expected_count: int,
+) -> None:
+    if not blinded_path.is_file():
+        raise FileNotFoundError(f"Missing frozen Step 3 annotation input: {blinded_path}")
+    with blinded_path.open(encoding="utf-8-sig", newline="") as file:
+        frozen_rows = list(csv.DictReader(file))
+    if len(frozen_rows) != expected_count:
+        raise ValueError(
+            f"Frozen annotation input must contain {expected_count} rows, found {len(frozen_rows)}"
+        )
+    frozen_by_id = {row["sample_id"]: row for row in frozen_rows}
+    if len(frozen_by_id) != len(frozen_rows):
+        raise ValueError("Frozen annotation input contains duplicate sample_id values")
+
+    result_ids = [str(row["sample_id"]) for row in rows]
+    if len(set(result_ids)) != len(result_ids):
+        raise ValueError("Human results.csv contains duplicate sample_id values")
+    if set(result_ids) != set(frozen_by_id):
+        missing = sorted(set(frozen_by_id) - set(result_ids))[:5]
+        unexpected = sorted(set(result_ids) - set(frozen_by_id))[:5]
+        raise ValueError(
+            f"Human results.csv sample_id set differs: missing={missing}, unexpected={unexpected}"
+        )
+    patent_ids = [str(row["patent_id"]) for row in rows]
+    if len(set(patent_ids)) != len(patent_ids):
+        raise ValueError("Human results.csv contains duplicate patent_id values")
+
+    for row in rows:
+        frozen = frozen_by_id[str(row["sample_id"])]
+        for field in FROZEN_RESULT_FIELDS[1:]:
+            if str(row[field]) != str(frozen.get(field, "")):
+                raise ValueError(
+                    f"Human results.csv changed frozen field {field} for {row['sample_id']}"
+                )
+        if not any(str(row[field]).strip() for field in ("title", "abstract", "claim")):
+            raise ValueError(f"Human results.csv has no patent text for {row['sample_id']}")
 
 
 def _keep_text_groups_together(rows: list[dict[str, Any]], *, seed: str) -> None:

@@ -502,7 +502,7 @@ def _load_population(
     digest = hashlib.sha256()
     seen_patents: set[str] = set()
     for database in databases:
-        connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+        connection = sqlite3.connect(f"file:{database}?mode=ro&immutable=1", uri=True)
         connection.row_factory = sqlite3.Row
         integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
         if integrity != "ok":
@@ -802,7 +802,10 @@ def _validate_human_result_identity(
 ) -> None:
     if not database_path.is_file():
         raise FileNotFoundError(f"Missing frozen Step 3 task database: {database_path}")
-    connection = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
+    connection = sqlite3.connect(
+        f"file:{database_path}?mode=ro&immutable=1",
+        uri=True,
+    )
     connection.row_factory = sqlite3.Row
     frozen_rows = []
     for task in connection.execute(

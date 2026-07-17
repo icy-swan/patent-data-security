@@ -6,7 +6,7 @@ from pathlib import Path
 from pipeline.step2.__main__ import _format_duration, _print_progress, build_parser
 from pipeline.step2.client import ClassificationResponse
 from pipeline.step2.prompt import load_prompt_bundle
-from pipeline.step2.runner import run_tasks
+from pipeline.step2.runner import _exclusive_lock, run_tasks
 from pipeline.step2.schema import PatentClassification
 from pipeline.step2.tasks import prepare_tasks
 
@@ -137,6 +137,17 @@ def test_runner_writes_model_result_under_local_patent_id_and_resumes(tmp_path: 
 def test_step2_defaults_to_ten_concurrent_requests() -> None:
     args = build_parser().parse_args(["run", "--input", "patents_2026.csv"])
     assert args.concurrency == 10
+
+
+def test_runner_removes_lock_after_exit(tmp_path: Path) -> None:
+    database = tmp_path / "tasks.sqlite3"
+    database.touch()
+    lock = database.with_name("tasks.sqlite3.run.lock")
+
+    with _exclusive_lock(database):
+        assert lock.is_file()
+
+    assert not lock.exists()
 
 
 def test_progress_duration_format() -> None:

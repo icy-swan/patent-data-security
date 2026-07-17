@@ -126,7 +126,13 @@ def read_progress(paths: Step3Paths) -> dict[str, Any]:
         progress = json.loads(paths.progress.read_text(encoding="utf-8"))
     if not paths.database.is_file():
         return {"status": "not_prepared", "database": str(paths.database)}
-    connection = _connect(paths.database)
+    runner_active = _runner_active(paths.database)
+    immutable = "" if runner_active else "&immutable=1"
+    connection = sqlite3.connect(
+        f"file:{paths.database}?mode=ro{immutable}",
+        uri=True,
+    )
+    connection.row_factory = sqlite3.Row
     counts = Counter(dict(connection.execute("SELECT status,COUNT(*) FROM tasks GROUP BY status")))
     running_row = connection.execute(
         "SELECT MIN(updated_at) FROM tasks WHERE status='running'"
@@ -142,7 +148,7 @@ def read_progress(paths: Step3Paths) -> dict[str, Any]:
             "pending": total - counts["succeeded"],
             "queued": counts["pending"],
             "running": counts["running"],
-            "runner_active": _runner_active(paths.database),
+            "runner_active": runner_active,
             "current_batch_started_at": running_row[0] if running_row else None,
             "progress_percent": (
                 round(counts["succeeded"] / total * 100, 4) if total else 0

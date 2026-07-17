@@ -154,7 +154,11 @@ def export_results(
 def read_progress(paths: Step2TaskPaths) -> dict[str, Any]:
     if paths.progress.is_file():
         return json.loads(paths.progress.read_text(encoding="utf-8"))
-    connection = _connect(paths.database)
+    connection = sqlite3.connect(
+        f"file:{paths.database}?mode=ro&immutable=1",
+        uri=True,
+    )
+    connection.row_factory = sqlite3.Row
     try:
         manifest = json.loads(
             connection.execute("SELECT value FROM meta WHERE key='task_manifest'").fetchone()[0]
@@ -601,15 +605,21 @@ def _result_row(row: sqlite3.Row) -> dict[str, Any]:
 @contextmanager
 def _exclusive_lock(database: Path) -> Iterator[None]:
     lock_path = database.with_name(database.name + ".run.lock")
-    with lock_path.open("a+", encoding="utf-8") as lock_file:
-        try:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise RuntimeError(f"A Step 2 runner is already active for {database}") from None
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    owns_lock = False
+    try:
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError(f"A Step 2 runner is already active for {database}") from None
+            owns_lock = True
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    finally:
+        if owns_lock:
+            lock_path.unlink(missing_ok=True)
 
 
 def _connect(path: Path) -> sqlite3.Connection:

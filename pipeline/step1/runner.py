@@ -229,13 +229,18 @@ def run_step1(
             if pool is not None:
                 pool.terminate()
                 pool.join()
-            staging_path.unlink(missing_ok=True)
-            result_path.with_suffix(result_path.suffix + ".partial").unlink(missing_ok=True)
+            result_path.unlink(missing_ok=True)
             raise
         finally:
             connection.close()
+            for path in (
+                staging_path,
+                staging_path.with_name(staging_path.name + "-wal"),
+                staging_path.with_name(staging_path.name + "-shm"),
+                result_path.with_suffix(result_path.suffix + ".partial"),
+            ):
+                path.unlink(missing_ok=True)
 
-        staging_path.unlink(missing_ok=True)
         return Step1Outputs(
             result=result_path,
             manifest=manifest_path,

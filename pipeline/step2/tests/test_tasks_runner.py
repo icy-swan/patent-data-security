@@ -42,7 +42,7 @@ def test_prepare_binds_patent_id_locally_without_routing_leak(tmp_path: Path) ->
     assert manifest["statistics_binding"]["duplicate_task_patent_ids"] == 0
     assert paths.database == (tmp_path / "step2" / "2026" / "tasks.sqlite3").resolve()
     assert paths.manifest.name == "manifest.json"
-    assert paths.results.name == "results.csv"
+    assert paths.results.name == "result.csv"
     connection = sqlite3.connect(paths.database)
     row = connection.execute(
         "SELECT patent_id, route, payload_json FROM tasks WHERE patent_id='CN-A'"

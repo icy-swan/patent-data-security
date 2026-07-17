@@ -59,9 +59,8 @@ OUTPUT_FIELDS = (
 
 @dataclass(frozen=True)
 class Step1Outputs:
-    results: Path
-    summary: Path
-    staging_database: Path | None = None
+    result: Path
+    manifest: Path
 
 
 @dataclass(frozen=True)
@@ -92,7 +91,6 @@ def run_step1(
     e_sample_rate: float = 0.02,
     e_sample_seed: str = "step1-e-random-v2",
     overwrite: bool = False,
-    keep_staging_db: bool = False,
 ) -> Step1Outputs:
     """Run local Step 1 and write one row per unique patent.
 
@@ -108,20 +106,19 @@ def run_step1(
         raise ValueError("e_sample_rate must be in (0, 1]")
 
     source = Path(input_path).resolve()
-    destination = Path(output_dir).resolve()
-    destination.mkdir(parents=True, exist_ok=True)
     dataset = dataset_id(source)
-    result_path = destination / f"step1_{dataset}.csv"
-    summary_path = destination / f"step1_summary_{dataset}.json"
-    staging_path = destination / f".step1_{dataset}.partial.sqlite3"
-    kept_staging_path = destination / f".step1_{dataset}.sqlite3"
-    lock_path = destination / f".step1_{dataset}.lock"
+    destination = Path(output_dir).resolve() / dataset
+    destination.mkdir(parents=True, exist_ok=True)
+    result_path = destination / "result.csv"
+    manifest_path = destination / "manifest.json"
+    staging_path = destination / ".tasks.partial.sqlite3"
+    lock_path = destination / ".step1.lock"
 
-    final_paths = (result_path, summary_path)
+    final_paths = (result_path, manifest_path)
     if not overwrite and any(path.exists() for path in final_paths):
         raise FileExistsError("Step 1 outputs already exist; pass --overwrite to replace them")
     if overwrite:
-        for path in (*final_paths, kept_staging_path):
+        for path in final_paths:
             path.unlink(missing_ok=True)
     staging_path.unlink(missing_ok=True)
 
@@ -224,28 +221,24 @@ def run_step1(
                 },
                 "elapsed_seconds": round(elapsed, 3),
                 "rows_per_second": round(raw_rows / max(elapsed, 0.001), 3),
-                "outputs": {"results": str(result_path)},
+                "outputs": {"result": str(result_path)},
                 "llm_requests_executed": 0,
             }
-            atomic_json_write(summary_path, summary)
+            atomic_json_write(manifest_path, summary)
         except BaseException:
             if pool is not None:
                 pool.terminate()
                 pool.join()
+            staging_path.unlink(missing_ok=True)
+            result_path.with_suffix(result_path.suffix + ".partial").unlink(missing_ok=True)
             raise
         finally:
             connection.close()
 
-        saved_database: Path | None = None
-        if keep_staging_db:
-            os.replace(staging_path, kept_staging_path)
-            saved_database = kept_staging_path
-        else:
-            staging_path.unlink(missing_ok=True)
+        staging_path.unlink(missing_ok=True)
         return Step1Outputs(
-            results=result_path,
-            summary=summary_path,
-            staging_database=saved_database,
+            result=result_path,
+            manifest=manifest_path,
         )
 
 

@@ -505,7 +505,7 @@ def _progress(
         "schema_version": "2.1.0",
         "dataset_id": manifest["dataset_id"],
         "database": str(paths.database),
-        "results": str(paths.results),
+        "result": str(paths.results),
         "model": client.model,
         "prompt_version": client.prompt_bundle.prompt_version,
         "prefix_sha256": client.prompt_bundle.prefix_sha256,

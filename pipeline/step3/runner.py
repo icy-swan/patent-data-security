@@ -102,7 +102,6 @@ def run_simulation(
         atomic_json_write(paths.progress, progress)
         if progress["succeeded"] == progress["total"]:
             rows = _completed_rows(connection)
-            progress.pop("split_report", None)
             progress["simulation_summary"] = write_simulation_dataset(
                 paths,
                 rows,
@@ -111,7 +110,14 @@ def run_simulation(
             )
             atomic_json_write(paths.progress, progress)
         connection.close()
+    if progress["succeeded"] == progress["total"]:
+        _cleanup_database_sidecars(paths.database)
     return progress
+
+
+def _cleanup_database_sidecars(database: Path) -> None:
+    for suffix in ("-wal", "-shm", ".run.lock"):
+        database.with_name(database.name + suffix).unlink(missing_ok=True)
 
 
 def read_progress(paths: Step3Paths) -> dict[str, Any]:

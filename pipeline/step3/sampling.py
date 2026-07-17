@@ -23,56 +23,6 @@ SAMPLING_GROUPS = ("positive", "hard_negative")
 SPLITS = ("train", "validation", "test")
 SPLIT_RATIOS = {"train": 0.8, "validation": 0.1, "test": 0.1}
 
-AUDIT_FIELDS = (
-    "sample_id",
-    "sampling_version",
-    "sample_seed",
-    "dataset_id",
-    "application_year",
-    "patent_id",
-    "source_row_number",
-    "sampling_stratum",
-    "sampling_group",
-    "stratum_population",
-    "stratum_sample_size",
-    "step3_inclusion_probability",
-    "step3_sample_weight",
-    "step2_route",
-    "step2_selection_group",
-    "step2_selection_probability",
-    "step2_sample_weight",
-    "combined_inclusion_probability",
-    "combined_sample_weight",
-    "step2_label",
-    "step2_confidence",
-    "step2_review_flag",
-    "step2_requested_model",
-    "step2_actual_model",
-    "step2_prompt_version",
-    "step2_response_id",
-    "title",
-    "abstract",
-    "claim",
-    "ipc",
-    "main_ipc",
-)
-
-BLINDED_FIELDS = (
-    "sample_id",
-    "dataset_id",
-    "application_year",
-    "patent_id",
-    "title",
-    "abstract",
-    "claim",
-    "ipc",
-    "main_ipc",
-    "annotator_id",
-    "annotation_status",
-    "annotation_json",
-    "submitted_at",
-)
-
 SIMULATION_FIELDS = (
     "sample_id",
     "dataset_id",
@@ -140,8 +90,6 @@ class SamplingConfig:
 class Step3Paths:
     root: Path
     database: Path
-    audit: Path
-    blinded: Path
     manifest: Path
     progress: Path
     simulation: Path
@@ -149,24 +97,20 @@ class Step3Paths:
     train: Path
     validation: Path
     test: Path
-    split_report: Path
 
 
 def step3_paths(output_dir: str | Path) -> Step3Paths:
     root = Path(output_dir).resolve()
     return Step3Paths(
         root=root,
-        database=root / "state" / "tasks.sqlite3",
-        audit=root / "sample" / "audit.csv",
-        blinded=root / "sample" / "annotation_input.csv",
-        manifest=root / "sample" / "manifest.json",
-        progress=root / "state" / "progress.json",
-        simulation=root / "dataset" / "simulation.csv",
-        results=root / "dataset" / "results.csv",
-        train=root / "dataset" / "splits" / "train.csv",
-        validation=root / "dataset" / "splits" / "validation.csv",
-        test=root / "dataset" / "splits" / "test.csv",
-        split_report=root / "dataset" / "split_report.json",
+        database=root / "tasks.sqlite3",
+        manifest=root / "manifest.json",
+        progress=root / "progress.json",
+        simulation=root / "simulation.csv",
+        results=root / "result.csv",
+        train=root / "dataset" / "train.csv",
+        validation=root / "dataset" / "validation.csv",
+        test=root / "dataset" / "test.csv",
     )
 
 
@@ -188,7 +132,7 @@ def prepare_sample(
     config: SamplingConfig | None = None,
     rebuild: bool = False,
 ) -> tuple[Step3Paths, dict[str, Any]]:
-    """Freeze the positive-priority year-balanced sample and blinded tasks."""
+    """Freeze the positive-priority year-balanced sample and simulation tasks."""
 
     config = config or SamplingConfig()
     _validate_config(config)
@@ -275,8 +219,6 @@ def prepare_sample(
     if len({row["patent_id"] for row in selected}) != len(selected):
         raise ValueError("Selected sample contains duplicate patent_id values")
 
-    _write_csv(paths.audit, AUDIT_FIELDS, (_audit_row(row) for row in selected))
-    _write_csv(paths.blinded, BLINDED_FIELDS, (_blinded_row(row) for row in selected))
     _initialize_task_database(paths.database, selected)
     manifest = {
         "schema_version": "2.2.0",
@@ -302,7 +244,10 @@ def prepare_sample(
         "strata": stratum_rows,
         "logical_input_sha256": logical_digest,
         "step2_sources": source_summary,
-        "outputs": {key: str(value) for key, value in asdict(paths).items() if key != "root"},
+        "outputs": {
+            key: str(getattr(paths, key))
+            for key in ("database", "manifest", "progress", "simulation")
+        },
         "simulation_policy": {
             "simulation_is_human_gold": False,
             "eligible_for_training_splits": False,
@@ -313,9 +258,31 @@ def prepare_sample(
             "allowed_values": ["true", "false"],
             "result_fields": list(RESULT_FIELDS),
         },
+        "finalize_outputs": {
+            "result": str(paths.results),
+            "train": str(paths.train),
+            "validation": str(paths.validation),
+            "test": str(paths.test),
+        },
         "prepared_at": _now(),
     }
     atomic_json_write(paths.manifest, manifest)
+    atomic_json_write(
+        paths.progress,
+        {
+            "schema_version": "2.2.0",
+            "status": "prepared",
+            "total": config.target_size,
+            "completed": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "pending": config.target_size,
+            "progress_percent": 0.0,
+            "database": str(paths.database),
+            "simulation": str(paths.simulation),
+            "prepared_at": _now(),
+        },
+    )
     return paths, manifest
 
 
@@ -393,7 +360,7 @@ def write_simulation_dataset(
     for row in rows:
         annotation = PatentClassification.model_validate(row["annotation"])
         item = {
-            **{field: row.get(field, "") for field in BLINDED_FIELDS[:9]},
+            **{field: row.get(field, "") for field in FROZEN_RESULT_FIELDS},
             **annotation.model_dump(),
             "annotation_source": "codex_model_simulation",
             "annotation_model": annotation_model,
@@ -427,7 +394,7 @@ def finalize_human_results(
     split_seed: str = "step3-human-split-v2.2.0",
     expected_count: int = 4_000,
 ) -> dict[str, Any]:
-    """Validate and sanitize human results.csv, then create minimal 8:1:1 splits."""
+    """Validate and sanitize human result.csv, then create minimal 8:1:1 splits."""
 
     if not paths.results.is_file():
         raise FileNotFoundError(f"Missing human annotation file: {paths.results}")
@@ -436,11 +403,11 @@ def finalize_human_results(
         input_fields = tuple(reader.fieldnames or ())
         missing = sorted(set(RESULT_FIELDS) - set(input_fields))
         if missing:
-            raise ValueError(f"Human results.csv is missing fields: {missing}")
+            raise ValueError(f"Human result.csv is missing fields: {missing}")
         raw_rows = [dict(row) for row in reader]
     if len(raw_rows) != expected_count:
         raise ValueError(
-            f"Human results.csv must contain {expected_count} rows, found {len(raw_rows)}"
+            f"Human result.csv must contain {expected_count} rows, found {len(raw_rows)}"
         )
 
     normalized: list[dict[str, Any]] = []
@@ -477,13 +444,13 @@ def finalize_human_results(
         )
         normalized.append(item)
 
-    _validate_human_result_identity(paths.blinded, normalized, expected_count=expected_count)
+    _validate_human_result_identity(paths.database, normalized, expected_count=expected_count)
     assigned, report = assign_exact_splits(normalized, seed=split_seed)
     by_split = {
         split: [row for row in assigned if row["data_split"] == split] for split in SPLITS
     }
 
-    for path in (paths.results, paths.train, paths.validation, paths.test, paths.split_report):
+    for path in (paths.results, paths.train, paths.validation, paths.test):
         path.parent.mkdir(parents=True, exist_ok=True)
     _write_csv(paths.results, RESULT_FIELDS, (_result_row(row) for row in assigned))
     _write_csv(paths.train, RESULT_FIELDS, (_result_row(row) for row in by_split["train"]))
@@ -513,7 +480,17 @@ def finalize_human_results(
             "written_at": _now(),
         }
     )
-    atomic_json_write(paths.split_report, report)
+    manifest = json.loads(paths.manifest.read_text(encoding="utf-8"))
+    manifest["human_results"] = report
+    manifest["outputs"].update(
+        {
+            "result": str(paths.results),
+            "train": str(paths.train),
+            "validation": str(paths.validation),
+            "test": str(paths.test),
+        }
+    )
+    atomic_json_write(paths.manifest, manifest)
     return report
 
 
@@ -677,9 +654,13 @@ def _prepare_output(paths: Step3Paths, *, rebuild: bool) -> None:
     if rebuild:
         for path in managed:
             Path(path).unlink(missing_ok=True)
-        paths.database.with_name(paths.database.name + ".run.lock").unlink(missing_ok=True)
-    for path in managed:
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        for suffix in ("-wal", "-shm", ".run.lock"):
+            paths.database.with_name(paths.database.name + suffix).unlink(missing_ok=True)
+        try:
+            paths.train.parent.rmdir()
+        except OSError:
+            pass
+    paths.root.mkdir(parents=True, exist_ok=True)
 
 
 def _initialize_task_database(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -748,20 +729,8 @@ def _initialize_task_database(path: Path, rows: list[dict[str, Any]]) -> None:
     )
     connection.commit()
     connection.close()
-
-
-def _audit_row(row: Mapping[str, Any]) -> dict[str, Any]:
-    return {field: row.get(field, "") for field in AUDIT_FIELDS}
-
-
-def _blinded_row(row: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        **{field: row.get(field, "") for field in BLINDED_FIELDS[:9]},
-        "annotator_id": "",
-        "annotation_status": "pending",
-        "annotation_json": "",
-        "submitted_at": "",
-    }
+    for suffix in ("-wal", "-shm"):
+        path.with_name(path.name + suffix).unlink(missing_ok=True)
 
 
 def _simulation_row(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -826,45 +795,64 @@ def _parse_controlled_list(
 
 
 def _validate_human_result_identity(
-    blinded_path: Path,
+    database_path: Path,
     rows: list[dict[str, Any]],
     *,
     expected_count: int,
 ) -> None:
-    if not blinded_path.is_file():
-        raise FileNotFoundError(f"Missing frozen Step 3 annotation input: {blinded_path}")
-    with blinded_path.open(encoding="utf-8-sig", newline="") as file:
-        frozen_rows = list(csv.DictReader(file))
+    if not database_path.is_file():
+        raise FileNotFoundError(f"Missing frozen Step 3 task database: {database_path}")
+    connection = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    frozen_rows = []
+    for task in connection.execute(
+        "SELECT sample_id,dataset_id,application_year,patent_id,payload_json "
+        "FROM tasks ORDER BY sample_id"
+    ):
+        payload = json.loads(task["payload_json"])
+        frozen_rows.append(
+            {
+                "sample_id": str(task["sample_id"]),
+                "dataset_id": str(task["dataset_id"]),
+                "application_year": str(task["application_year"]),
+                "patent_id": str(task["patent_id"]),
+                **{
+                    field: str(payload.get(field, "") or "")
+                    for field in ("title", "abstract", "claim", "ipc", "main_ipc")
+                },
+            }
+        )
+    connection.close()
     if len(frozen_rows) != expected_count:
         raise ValueError(
-            f"Frozen annotation input must contain {expected_count} rows, found {len(frozen_rows)}"
+            f"Frozen task database must contain {expected_count} rows, found {len(frozen_rows)}"
         )
     frozen_by_id = {row["sample_id"]: row for row in frozen_rows}
     if len(frozen_by_id) != len(frozen_rows):
-        raise ValueError("Frozen annotation input contains duplicate sample_id values")
+        raise ValueError("Frozen task database contains duplicate sample_id values")
 
     result_ids = [str(row["sample_id"]) for row in rows]
     if len(set(result_ids)) != len(result_ids):
-        raise ValueError("Human results.csv contains duplicate sample_id values")
+        raise ValueError("Human result.csv contains duplicate sample_id values")
     if set(result_ids) != set(frozen_by_id):
         missing = sorted(set(frozen_by_id) - set(result_ids))[:5]
         unexpected = sorted(set(result_ids) - set(frozen_by_id))[:5]
         raise ValueError(
-            f"Human results.csv sample_id set differs: missing={missing}, unexpected={unexpected}"
+            f"Human result.csv sample_id set differs: missing={missing}, unexpected={unexpected}"
         )
     patent_ids = [str(row["patent_id"]) for row in rows]
     if len(set(patent_ids)) != len(patent_ids):
-        raise ValueError("Human results.csv contains duplicate patent_id values")
+        raise ValueError("Human result.csv contains duplicate patent_id values")
 
     for row in rows:
         frozen = frozen_by_id[str(row["sample_id"])]
         for field in FROZEN_RESULT_FIELDS[1:]:
             if str(row[field]) != str(frozen.get(field, "")):
                 raise ValueError(
-                    f"Human results.csv changed frozen field {field} for {row['sample_id']}"
+                    f"Human result.csv changed frozen field {field} for {row['sample_id']}"
                 )
         if not any(str(row[field]).strip() for field in ("title", "abstract", "claim")):
-            raise ValueError(f"Human results.csv has no patent text for {row['sample_id']}")
+            raise ValueError(f"Human result.csv has no patent text for {row['sample_id']}")
 
 
 def _keep_text_groups_together(rows: list[dict[str, Any]], *, seed: str) -> None:

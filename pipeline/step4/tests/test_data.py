@@ -63,7 +63,7 @@ def _write_step3_fixture(root: Path, *, cross_split_text: bool = False) -> Path:
     global_index = 0
     all_rows: list[dict[str, str]] = []
     for split, count in split_counts.items():
-        path = root / "dataset" / "splits" / f"{split}.csv"
+        path = root / "dataset" / f"{split}.csv"
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8-sig", newline="") as file:
             writer = csv.DictWriter(file, fieldnames=REQUIRED_FIELDS)
@@ -92,7 +92,7 @@ def _write_step3_fixture(root: Path, *, cross_split_text: bool = False) -> Path:
                 writer.writerow(row)
                 all_rows.append(row)
                 global_index += 1
-    results = root / "dataset" / "results.csv"
+    results = root / "result.csv"
     with results.open("w", encoding="utf-8-sig", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=REQUIRED_FIELDS)
         writer.writeheader()

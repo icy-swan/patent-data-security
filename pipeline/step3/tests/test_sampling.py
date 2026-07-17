@@ -9,9 +9,9 @@ import pytest
 
 from pipeline.step3.runner import _exclusive_lock, _runner_active
 from pipeline.step3.sampling import (
-    FROZEN_RESULT_FIELDS,
     RESULT_FIELDS,
     _balanced_capacity_allocation,
+    _initialize_task_database,
     _sampling_group,
     assign_exact_splits,
     discover_step2_databases,
@@ -109,14 +109,15 @@ def test_database_discovery_excludes_retry_backups(tmp_path: Path) -> None:
     assert discover_step2_databases(tmp_path) == [current]
 
 
-def test_step3_paths_use_purpose_based_directories(tmp_path: Path) -> None:
-    paths = step3_paths(tmp_path / "positive-priority-v2.2.0")
+def test_step3_paths_use_flat_runtime_and_dataset_directories(tmp_path: Path) -> None:
+    paths = step3_paths(tmp_path / "step3")
 
-    assert paths.audit == paths.root / "sample" / "audit.csv"
-    assert paths.database == paths.root / "state" / "tasks.sqlite3"
-    assert paths.simulation == paths.root / "dataset" / "simulation.csv"
-    assert paths.results == paths.root / "dataset" / "results.csv"
-    assert paths.train == paths.root / "dataset" / "splits" / "train.csv"
+    assert paths.database == paths.root / "tasks.sqlite3"
+    assert paths.manifest == paths.root / "manifest.json"
+    assert paths.progress == paths.root / "progress.json"
+    assert paths.simulation == paths.root / "simulation.csv"
+    assert paths.results == paths.root / "result.csv"
+    assert paths.train == paths.root / "dataset" / "train.csv"
 
 
 def test_status_check_does_not_create_a_stale_lock(tmp_path: Path) -> None:
@@ -190,7 +191,6 @@ def _write_human_result_fixture(
     first_evaluation: str = "true",
     changed_title: bool = False,
 ) -> None:
-    paths.blinded.parent.mkdir(parents=True, exist_ok=True)
     paths.results.parent.mkdir(parents=True, exist_ok=True)
     frozen_rows = []
     result_rows = []
@@ -225,10 +225,11 @@ def _write_human_result_fixture(
             result["title"] = "被修改的名称"
         frozen_rows.append(frozen)
         result_rows.append(result)
-    with paths.blinded.open("w", encoding="utf-8-sig", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=FROZEN_RESULT_FIELDS)
-        writer.writeheader()
-        writer.writerows(frozen_rows)
+    _initialize_task_database(paths.database, frozen_rows)
+    paths.manifest.write_text(
+        json.dumps({"outputs": {}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
     fields = list(RESULT_FIELDS)
     if extra_fields:
         fields.extend(("confidence", "review_flag", "step2_label"))

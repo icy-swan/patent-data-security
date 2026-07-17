@@ -13,12 +13,12 @@ from typing import Any
 
 from pipeline.common.datasets import dataset_id
 from pipeline.step2.client import ARK_BASE_URL, VolcengineArkClient
-from pipeline.step2.prompt import PROMPT_VERSION
 from pipeline.step2.runner import read_progress, run_tasks
 from pipeline.step2.tasks import prepare_tasks, task_paths
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "step2" / PROMPT_VERSION
+DEFAULT_STEP1 = PROJECT_ROOT / "data" / "step1"
+DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "step2"
 STOP_REQUESTED = False
 
 
@@ -28,7 +28,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     prepare = subparsers.add_parser("prepare")
     prepare.add_argument("--input", type=Path, required=True)
-    prepare.add_argument("--step1-results", type=Path, required=True)
+    prepare.add_argument(
+        "--step1-results",
+        type=Path,
+        help="Defaults to data/step1/{dataset}/result.csv",
+    )
     prepare.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     prepare.add_argument("--encoding", default="utf-8-sig")
     prepare.add_argument("--rebuild", action="store_true")
@@ -68,9 +72,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     if args.command == "prepare":
+        token = dataset_id(args.input)
+        step1_results = args.step1_results or DEFAULT_STEP1 / token / "result.csv"
+        if not step1_results.is_file():
+            raise SystemExit(f"Missing Step 1 result: {step1_results}")
         paths, manifest = prepare_tasks(
             args.input,
-            args.step1_results,
+            step1_results,
             args.output_dir,
             encoding=args.encoding,
             rebuild=args.rebuild,
@@ -116,6 +124,7 @@ def main() -> int:
         base_url=args.base_url,
         timeout_seconds=args.timeout_seconds,
     )
+    progress: dict[str, Any] | None = None
     try:
         progress = run_tasks(
             paths,
@@ -129,6 +138,8 @@ def main() -> int:
         print(json.dumps(progress, ensure_ascii=False, indent=2))
     finally:
         _remove_own_pid_file(args.pid_file)
+    if progress is not None:
+        _cleanup_completed_runtime(paths, progress)
     return 0
 
 
@@ -276,6 +287,22 @@ def _remove_own_pid_file(path: Path | None) -> None:
     path.unlink(missing_ok=True)
 
 
+def _cleanup_completed_runtime(paths: Any, progress: dict[str, Any]) -> None:
+    """Keep only the four documented Step 2 artifacts after a complete run."""
+
+    if progress.get("succeeded") != progress.get("total") or progress.get("failed"):
+        return
+    pid_path, log_path = _runner_paths(paths)
+    for path in (
+        pid_path,
+        log_path,
+        paths.database.with_name(paths.database.name + "-wal"),
+        paths.database.with_name(paths.database.name + "-shm"),
+        paths.database.with_name(paths.database.name + ".run.lock"),
+    ):
+        path.unlink(missing_ok=True)
+
+
 def _read_env_file(path: Path) -> dict[str, str]:
     if not path.is_file():
         return {}
@@ -302,7 +329,7 @@ def _paths_json(paths: Any) -> dict[str, str]:
     return {
         "database": str(paths.database),
         "manifest": str(paths.manifest),
-        "results": str(paths.results),
+        "result": str(paths.results),
         "progress": str(paths.progress),
     }
 

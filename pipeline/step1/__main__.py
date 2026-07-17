@@ -29,7 +29,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--e-sample-rate", type=float, default=0.02)
     parser.add_argument("--e-sample-seed", default="step1-e-random-v2")
     parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--keep-staging-db", action="store_true")
     parser.add_argument(
         "--skip-existing",
         action=argparse.BooleanOptionalAction,
@@ -46,8 +45,8 @@ def main() -> int:
     for source in inputs:
         token = dataset_id(source)
         expected = (
-            args.output_dir / f"step1_{token}.csv",
-            args.output_dir / f"step1_summary_{token}.json",
+            args.output_dir / token / "result.csv",
+            args.output_dir / token / "manifest.json",
         )
         if args.skip_existing and not args.overwrite and all(path.is_file() for path in expected):
             datasets.append({"dataset_id": token, "input": str(source), "status": "skipped"})
@@ -65,18 +64,14 @@ def main() -> int:
             e_sample_rate=args.e_sample_rate,
             e_sample_seed=args.e_sample_seed,
             overwrite=args.overwrite,
-            keep_staging_db=args.keep_staging_db,
         )
         datasets.append(
             {
                 "dataset_id": token,
                 "input": str(source),
                 "status": "completed",
-                "results": str(outputs.results),
-                "summary": str(outputs.summary),
-                "staging_database": (
-                    str(outputs.staging_database) if outputs.staging_database else None
-                ),
+                "result": str(outputs.result),
+                "manifest": str(outputs.manifest),
             }
         )
     print(json.dumps({"datasets": datasets, "llm_requests_executed": 0}, ensure_ascii=False))

@@ -29,7 +29,9 @@ def test_step1_streams_deduplicates_routes_and_samples(tmp_path: Path) -> None:
         e_sample_rate=1,
     )
 
-    rows = _read_csv(outputs.results)
+    assert outputs.result == (tmp_path / "step1" / "2021" / "result.csv").resolve()
+    assert outputs.manifest == (tmp_path / "step1" / "2021" / "manifest.json").resolve()
+    rows = _read_csv(outputs.result)
     assert len(rows) == 3
     by_title = {row["title"]: row for row in rows}
     assert by_title["加密方法"]["route"] == "S"
@@ -45,7 +47,7 @@ def test_step1_streams_deduplicates_routes_and_samples(tmp_path: Path) -> None:
     assert synthetic["synthetic_id"] == "True"
     assert synthetic["patent_id"].startswith("synthetic-")
 
-    summary = json.loads(outputs.summary.read_text(encoding="utf-8"))
+    summary = json.loads(outputs.manifest.read_text(encoding="utf-8"))
     assert summary["stats"] == {
         "input_rows": 4,
         "unique_patents": 3,
@@ -54,7 +56,7 @@ def test_step1_streams_deduplicates_routes_and_samples(tmp_path: Path) -> None:
         "selected_for_step2": {"S_all": 2, "E_random": 1},
     }
     assert summary["llm_requests_executed"] == 0
-    assert not (tmp_path / "step1" / ".step1_2021.partial.sqlite3").exists()
+    assert not (tmp_path / "step1" / "2021" / ".tasks.partial.sqlite3").exists()
 
 
 def test_e_sampling_is_stable_across_runs(tmp_path: Path) -> None:
@@ -81,11 +83,10 @@ def test_e_sampling_is_stable_across_runs(tmp_path: Path) -> None:
     )
 
     selected_first = {
-        row["patent_id"] for row in _read_csv(first.results) if row["selected_for_step2"] == "true"
+        row["patent_id"] for row in _read_csv(first.result) if row["selected_for_step2"] == "true"
     }
     selected_second = {
-        row["patent_id"] for row in _read_csv(second.results) if row["selected_for_step2"] == "true"
+        row["patent_id"] for row in _read_csv(second.result) if row["selected_for_step2"] == "true"
     }
     assert selected_first == selected_second
     assert 0 < len(selected_first) < 20
-

@@ -15,9 +15,10 @@ python -m pipeline.step1 \
 
 主要输出：
 
-- `step1_<dataset>.csv`：每件唯一专利一行，含命中位置、上下文、来源、S/E 路由和稳定 E 抽样结果；
-- `step1_summary_<dataset>.json`：版本、资源哈希、唯一专利数、重复关联行和路由统计；
-- `.step1_<dataset>.partial.sqlite3`：运行中的磁盘去重表，成功后默认删除。
+- `data/step1/<年份>/result.csv`：每件唯一专利一行，含命中位置、上下文、来源、S/E 路由和稳定 E 抽样结果；
+- `data/step1/<年份>/manifest.json`：版本、资源哈希、唯一专利数、重复关联行和路由统计。
+
+运行中使用的 SQLite 去重表在成功后自动删除，不属于正式产物。
 
 当前词表是 pilot 种子词表，尚不能替代人工开发集和留出集验证。方法与限制见 [docs/patent_identification_methodology.md](docs/patent_identification_methodology.md)。
 
@@ -26,16 +27,17 @@ Step 2 先把 Step 1 已冻结的 `S_all + E_random` 任务池与原始专利正
 ```bash
 python -m pipeline.step2 prepare \
   --input v1/data/raw/上市公司专利明细_2021年申请.csv \
-  --step1-results data/step1/keyword-2.0.0-pilot.2/step1_2021.csv \
-  --output-dir data/step2/data-security-binary-v2.1.0
+  --output-dir data/step2
 ```
+
+`--step1-results` 可省略，程序会按输入年份读取 `data/step1/<年份>/result.csv`。
 
 确认模型、端点和 API Key 后再发送请求：
 
 ```bash
 python -m pipeline.step2 run \
   --input v1/data/raw/上市公司专利明细_2021年申请.csv \
-  --output-dir data/step2/data-security-binary-v2.1.0 \
+  --output-dir data/step2 \
   --model "$ARK_MODEL" \
   --concurrency 10
 ```
@@ -47,7 +49,7 @@ python -m pipeline.step2 run \
 ```bash
 python -m pipeline.step2 start \
   --input v1/data/raw/上市公司专利明细_2021年申请.csv \
-  --output-dir data/step2/data-security-binary-v2.1.0 \
+  --output-dir data/step2 \
   --env-file v1/.env \
   --concurrency 10
 ```
@@ -57,13 +59,13 @@ python -m pipeline.step2 start \
 ```bash
 python -m pipeline.step2 status \
   --input v1/data/raw/上市公司专利明细_2021年申请.csv \
-  --output-dir data/step2/data-security-binary-v2.1.0
+  --output-dir data/step2
 
 python -m pipeline.step2 stop \
   --input v1/data/raw/上市公司专利明细_2021年申请.csv \
-  --output-dir data/step2/data-security-binary-v2.1.0
+  --output-dir data/step2
 
-tail -n 50 -f data/step2/data-security-binary-v2.1.0/2021/runner.log
+tail -n 50 -f data/step2/2021/runner.log
 ```
 
 `stop` 发送 `SIGTERM`：runner 停止领取新任务，等待正在执行的请求完成并落库后退出。日志中的 `Ctrl-C` 只退出 `tail`，不会停止后台分类。
@@ -72,30 +74,27 @@ tail -n 50 -f data/step2/data-security-binary-v2.1.0/2021/runner.log
 
 `DATA_SECURITY` 结果同时输出 `processing_activities`（收集、存储、使用、加工、传输、提供、公开、其他）和 `industry_sectors`（工业、电信、交通、金融、自然资源、卫生健康、教育、科技、其他）两个受控多标签维度。`OTHER` 的两个维度固定为 `["other"]`；后续子类分析只使用主标签为 `DATA_SECURITY` 的行。
 
-Step 2 按“方法版本 / 数据集”隔离产物。例如 2021 年数据写入
-`data/step2/data-security-binary-v2.1.0/2021/`，目录内固定使用 `manifest.json`、
-`tasks.sqlite3`、`results.csv` 和 `progress.json`；后台运行时另有 `runner.pid` 与
-`runner.log`。这些运行产物由 Git 忽略。
+Step 2 按年份隔离产物。例如 2021 年数据写入 `data/step2/2021/`，完成后目录内只保留
+`result.csv`、`manifest.json`、`tasks.sqlite3` 和 `progress.json`。后台运行期间产生的
+`runner.pid`、`runner.log`、锁文件及 SQLite sidecar 会在全部任务成功后删除。
 
 Step 3 冻结 4,000 条样本并完成 3,200/400/400 切分，详细命令见
 [pipeline/step3/README.md](pipeline/step3/README.md)。
 
-人工标注结果固定写入 `data/step3/positive-priority-v2.2.0/dataset/results.csv`，然后执行：
+人工标注结果固定写入 `data/step3/result.csv`，然后执行：
 
 ```bash
-python -m pipeline.step3 finalize \
-  --output-dir data/step3/positive-priority-v2.2.0
+python -m pipeline.step3 finalize
 ```
 
-只有 `results.csv` 的 `human_evaluation=true/false` 会进入训练、验证和测试切分；Codex 模拟
+只有 `result.csv` 的 `human_evaluation=true/false` 会进入 `data/step3/dataset/` 下的训练、
+验证和测试切分；Codex 模拟
 结果不生成训练数据。
 
 Step 4 从冻结切分生成 RoBERTa 分类数据和 MaaS `messages` JSONL：
 
 ```bash
-python -m pipeline.step4 prepare \
-  --step3-dir data/step3/positive-priority-v2.2.0 \
-  --output-dir data/step4/data-security-binary-v1.0.0
+python -m pipeline.step4 prepare
 ```
 
 只在本地训练 RoBERTa；SFT JSONL 由用户上传 MaaS，仓库不实现 SFT 训练：
@@ -104,7 +103,7 @@ python -m pipeline.step4 prepare \
 python -m pip install -e '.[step4]'
 
 python -m pipeline.step4 train-roberta \
-  --output-dir data/step4/data-security-binary-v1.0.0 \
+  --output-dir data/step4 \
   --model hfl/chinese-roberta-wwm-ext \
   --text-fields abstract
 ```

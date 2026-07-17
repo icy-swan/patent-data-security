@@ -31,7 +31,7 @@ def task_paths(output_dir: str | Path, dataset: str) -> Step2TaskPaths:
     return Step2TaskPaths(
         database=root / "tasks.sqlite3",
         manifest=root / "manifest.json",
-        results=root / "results.csv",
+        results=root / "result.csv",
         progress=root / "progress.json",
     )
 
@@ -59,6 +59,7 @@ def prepare_tasks(
         runtime_paths = (
             paths.database.parent / "runner.pid",
             paths.database.parent / "runner.log",
+            paths.database.with_name(paths.database.name + ".run.lock"),
         )
         for path in (*all_paths, *runtime_paths):
             path.unlink(missing_ok=True)
@@ -170,6 +171,12 @@ def prepare_tasks(
             "by_selection_group": dict(sorted(group_counts.items())),
         },
         "database": str(paths.database),
+        "outputs": {
+            "result": str(paths.results),
+            "manifest": str(paths.manifest),
+            "database": str(paths.database),
+            "progress": str(paths.progress),
+        },
         "prepared_at": _now(),
     }
     connection.execute(

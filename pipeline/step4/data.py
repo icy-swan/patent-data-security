@@ -114,9 +114,9 @@ def prepare_datasets(
     """Validate frozen splits and export classifier plus MaaS conversational JSONL."""
 
     step3_root = Path(step3_dir).resolve()
-    results_path = step3_root / "dataset" / "results.csv"
+    results_path = step3_root / "result.csv"
     source_paths = {
-        split: step3_root / "dataset" / "splits" / f"{split}.csv" for split in SPLITS
+        split: step3_root / "dataset" / f"{split}.csv" for split in SPLITS
     }
     missing = [path for path in (results_path, *source_paths.values()) if not path.is_file()]
     if missing:
@@ -278,7 +278,7 @@ def _read_and_validate_results(path: Path, *, expected_count: int) -> list[dict[
             )
         rows = [dict(row) for row in reader]
     if len(rows) != expected_count:
-        raise ValueError(f"results.csv must contain {expected_count} rows, found {len(rows)}")
+        raise ValueError(f"result.csv must contain {expected_count} rows, found {len(rows)}")
     for row in rows:
         evaluation = row["human_evaluation"].strip().lower()
         if evaluation not in HUMAN_EVALUATION_TO_LABEL:
@@ -294,10 +294,10 @@ def _validate_splits_match_results(
 ) -> None:
     results_by_id = {row["sample_id"]: row for row in result_rows}
     if len(results_by_id) != len(result_rows):
-        raise ValueError("Step 3 results.csv contains duplicate sample_id values")
+        raise ValueError("Step 3 result.csv contains duplicate sample_id values")
     split_ids = [row["sample_id"] for row in split_rows]
     if len(set(split_ids)) != len(split_ids) or set(split_ids) != set(results_by_id):
-        raise ValueError("Step 3 splits do not contain exactly the results.csv sample_id set")
+        raise ValueError("Step 3 splits do not contain exactly the result.csv sample_id set")
     for row in split_rows:
         source = results_by_id[row["sample_id"]]
         for field in REQUIRED_FIELDS:

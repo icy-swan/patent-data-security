@@ -20,7 +20,8 @@ from pipeline.step3.sampling import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "step3" / "positive-priority-v2.2.0"
+DEFAULT_STEP2 = PROJECT_ROOT / "data" / "step2"
+DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "step3"
 STOP_REQUESTED = False
 
 
@@ -29,8 +30,8 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     prepare = subparsers.add_parser("prepare", help="Freeze the 4,000-record sample")
-    sources = prepare.add_mutually_exclusive_group(required=True)
-    sources.add_argument("--step2-dir", type=Path)
+    sources = prepare.add_mutually_exclusive_group()
+    sources.add_argument("--step2-dir", type=Path, default=DEFAULT_STEP2)
     sources.add_argument("--database", type=Path, action="append")
     prepare.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     prepare.add_argument("--seed", default=SamplingConfig().seed)
@@ -53,7 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
 
     finalize = subparsers.add_parser(
-        "finalize", help="Validate dataset/results.csv and create clean 8:1:1 human splits"
+        "finalize", help="Validate result.csv and create clean 8:1:1 human splits"
     )
     finalize.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     finalize.add_argument("--split-seed", default="step3-human-split-v2.2.0")

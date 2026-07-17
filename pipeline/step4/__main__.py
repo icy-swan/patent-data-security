@@ -6,12 +6,12 @@ import argparse
 import json
 from pathlib import Path
 
-from pipeline.step4.data import DATASET_VERSION, paths_as_json, prepare_datasets, step4_paths
+from pipeline.step4.data import paths_as_json, prepare_datasets, step4_paths
 from pipeline.step4.train import DEFAULT_MODEL, TEXT_FIELDS, train_roberta
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_STEP3 = PROJECT_ROOT / "data" / "step3" / "positive-priority-v2.2.0"
-DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "step4" / DATASET_VERSION
+DEFAULT_STEP3 = PROJECT_ROOT / "data" / "step3"
+DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "step4"
 
 
 def build_parser() -> argparse.ArgumentParser:

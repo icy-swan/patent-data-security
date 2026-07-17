@@ -5,11 +5,13 @@ from pathlib import Path
 
 import pytest
 
+from pipeline.step3.runner import _exclusive_lock, _runner_active
 from pipeline.step3.sampling import (
     _balanced_capacity_allocation,
     _sampling_group,
     assign_exact_splits,
     discover_step2_databases,
+    step3_paths,
 )
 
 
@@ -93,9 +95,40 @@ def test_exact_text_duplicates_never_cross_splits() -> None:
 
 
 def test_database_discovery_excludes_retry_backups(tmp_path: Path) -> None:
-    current = tmp_path / "step2_tasks_2021.sqlite3"
+    current = tmp_path / "2021" / "tasks.sqlite3"
+    current.parent.mkdir()
     backup = tmp_path / "step2_tasks_2021.before_retry_20260716.sqlite3"
     current.touch()
     backup.touch()
 
     assert discover_step2_databases(tmp_path) == [current]
+
+
+def test_step3_paths_use_purpose_based_directories(tmp_path: Path) -> None:
+    paths = step3_paths(tmp_path / "positive-priority-v2.2.0")
+
+    assert paths.audit == paths.root / "sample" / "audit.csv"
+    assert paths.database == paths.root / "state" / "tasks.sqlite3"
+    assert paths.dataset == paths.root / "dataset" / "provisional.csv"
+    assert paths.train == paths.root / "dataset" / "splits" / "train.csv"
+
+
+def test_status_check_does_not_create_a_stale_lock(tmp_path: Path) -> None:
+    database = tmp_path / "state" / "tasks.sqlite3"
+    database.parent.mkdir()
+    database.touch()
+
+    assert _runner_active(database) is False
+    assert not database.with_name("tasks.sqlite3.run.lock").exists()
+
+
+def test_runner_removes_lock_after_exit(tmp_path: Path) -> None:
+    database = tmp_path / "state" / "tasks.sqlite3"
+    database.parent.mkdir()
+    database.touch()
+    lock = database.with_name("tasks.sqlite3.run.lock")
+
+    with _exclusive_lock(database):
+        assert lock.is_file()
+
+    assert not lock.exists()

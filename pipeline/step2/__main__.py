@@ -13,10 +13,12 @@ from typing import Any
 
 from pipeline.common.datasets import dataset_id
 from pipeline.step2.client import ARK_BASE_URL, VolcengineArkClient
+from pipeline.step2.prompt import PROMPT_VERSION
 from pipeline.step2.runner import read_progress, run_tasks
 from pipeline.step2.tasks import prepare_tasks, task_paths
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "step2" / PROMPT_VERSION
 STOP_REQUESTED = False
 
 
@@ -27,13 +29,13 @@ def build_parser() -> argparse.ArgumentParser:
     prepare = subparsers.add_parser("prepare")
     prepare.add_argument("--input", type=Path, required=True)
     prepare.add_argument("--step1-results", type=Path, required=True)
-    prepare.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "data" / "step2")
+    prepare.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     prepare.add_argument("--encoding", default="utf-8-sig")
     prepare.add_argument("--rebuild", action="store_true")
 
     run = subparsers.add_parser("run")
     run.add_argument("--input", type=Path, required=True, help="Used to resolve dataset ID")
-    run.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "data" / "step2")
+    run.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     run.add_argument("--model", default=os.getenv("ARK_MODEL"))
     run.add_argument("--base-url", default=os.getenv("ARK_BASE_URL", ARK_BASE_URL))
     run.add_argument("--timeout-seconds", type=float, default=180)
@@ -44,7 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     start = subparsers.add_parser("start")
     start.add_argument("--input", type=Path, required=True, help="Used to resolve dataset ID")
-    start.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "data" / "step2")
+    start.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     start.add_argument("--env-file", type=Path, default=PROJECT_ROOT / "v1" / ".env")
     start.add_argument("--model")
     start.add_argument("--base-url")
@@ -55,11 +57,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     stop = subparsers.add_parser("stop")
     stop.add_argument("--input", type=Path, required=True, help="Used to resolve dataset ID")
-    stop.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "data" / "step2")
+    stop.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
 
     status = subparsers.add_parser("status")
     status.add_argument("--input", type=Path, required=True)
-    status.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "data" / "step2")
+    status.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     return parser
 
 
@@ -245,9 +247,8 @@ def _format_duration(seconds: float) -> str:
 
 
 def _runner_paths(paths: Any) -> tuple[Path, Path]:
-    dataset = paths.database.stem.removeprefix("step2_tasks_")
     root = paths.database.parent
-    return root / f"step2_run_{dataset}.pid", root / f"step2_run_{dataset}.log"
+    return root / "runner.pid", root / "runner.log"
 
 
 def _read_pid(path: Path) -> int | None:

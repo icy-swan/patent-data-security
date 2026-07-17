@@ -288,27 +288,36 @@ def _has_retryable(connection: sqlite3.Connection, max_attempts: int) -> bool:
 
 def _runner_active(database: Path) -> bool:
     lock_path = database.with_name(database.name + ".run.lock")
-    with lock_path.open("a+", encoding="utf-8") as lock_file:
+    if not lock_path.is_file():
+        return False
+    with lock_path.open("r+", encoding="utf-8") as lock_file:
         try:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return True
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-        return False
+    lock_path.unlink(missing_ok=True)
+    return False
 
 
 @contextmanager
 def _exclusive_lock(database: Path) -> Iterator[None]:
     lock_path = database.with_name(database.name + ".run.lock")
-    with lock_path.open("a+", encoding="utf-8") as lock_file:
-        try:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise RuntimeError(f"A Step 3 runner is already active for {database}") from None
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    owns_lock = False
+    try:
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError(f"A Step 3 runner is already active for {database}") from None
+            owns_lock = True
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    finally:
+        if owns_lock:
+            lock_path.unlink(missing_ok=True)
 
 
 def _connect(path: Path) -> sqlite3.Connection:

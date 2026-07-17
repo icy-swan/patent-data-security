@@ -19,7 +19,7 @@ from pipeline.step3.sampling import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "step3" / "step3-positive-priority-v2.2.0"
+DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "step3" / "positive-priority-v2.2.0"
 STOP_REQUESTED = False
 
 

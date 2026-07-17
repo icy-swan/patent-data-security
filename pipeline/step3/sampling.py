@@ -127,7 +127,6 @@ class Step3Paths:
     blinded: Path
     manifest: Path
     progress: Path
-    annotations: Path
     dataset: Path
     train: Path
     validation: Path
@@ -139,24 +138,26 @@ def step3_paths(output_dir: str | Path) -> Step3Paths:
     root = Path(output_dir).resolve()
     return Step3Paths(
         root=root,
-        database=root / "step3_tasks.sqlite3",
-        audit=root / "step3_sample_audit.csv",
-        blinded=root / "step3_annotation_input_blinded.csv",
-        manifest=root / "step3_sample_manifest.json",
-        progress=root / "step3_simulation_progress.json",
-        annotations=root / "step3_simulated_annotations.csv",
-        dataset=root / "step3_dataset_provisional.csv",
-        train=root / "step3_train_provisional.csv",
-        validation=root / "step3_validation_provisional.csv",
-        test=root / "step3_test_provisional.csv",
-        split_report=root / "step3_split_report.json",
+        database=root / "state" / "tasks.sqlite3",
+        audit=root / "sample" / "audit.csv",
+        blinded=root / "sample" / "annotation_input.csv",
+        manifest=root / "sample" / "manifest.json",
+        progress=root / "state" / "progress.json",
+        dataset=root / "dataset" / "provisional.csv",
+        train=root / "dataset" / "splits" / "train.csv",
+        validation=root / "dataset" / "splits" / "validation.csv",
+        test=root / "dataset" / "splits" / "test.csv",
+        split_report=root / "dataset" / "split_report.json",
     )
 
 
 def discover_step2_databases(step2_dir: str | Path) -> list[Path]:
+    root = Path(step2_dir).resolve()
+    canonical = root.glob("*/tasks.sqlite3")
+    legacy = root.glob("step2_tasks_*.sqlite3")
     return sorted(
         path
-        for path in Path(step2_dir).resolve().glob("step2_tasks_*.sqlite3")
+        for path in {*canonical, *legacy}
         if ".before_" not in path.name
     )
 
@@ -379,7 +380,6 @@ def write_provisional_dataset(
         normalized.append(item)
     assigned, report = assign_exact_splits(normalized, seed=split_seed)
 
-    _write_csv(paths.annotations, DATASET_FIELDS, (_dataset_row(row) for row in assigned))
     _write_csv(paths.dataset, DATASET_FIELDS, (_dataset_row(row) for row in assigned))
     by_split = {split: [row for row in assigned if row["data_split"] == split] for split in SPLITS}
     _write_csv(paths.train, DATASET_FIELDS, (_dataset_row(row) for row in by_split["train"]))
@@ -565,7 +565,9 @@ def _prepare_output(paths: Step3Paths, *, rebuild: bool) -> None:
     if rebuild:
         for path in managed:
             Path(path).unlink(missing_ok=True)
-    paths.root.mkdir(parents=True, exist_ok=True)
+        paths.database.with_name(paths.database.name + ".run.lock").unlink(missing_ok=True)
+    for path in managed:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
 
 
 def _initialize_task_database(path: Path, rows: list[dict[str, Any]]) -> None:

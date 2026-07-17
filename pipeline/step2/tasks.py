@@ -27,12 +27,12 @@ class Step2TaskPaths:
 
 
 def task_paths(output_dir: str | Path, dataset: str) -> Step2TaskPaths:
-    root = Path(output_dir).resolve()
+    root = Path(output_dir).resolve() / dataset
     return Step2TaskPaths(
-        database=root / f"step2_tasks_{dataset}.sqlite3",
-        manifest=root / f"step2_task_manifest_{dataset}.json",
-        results=root / f"step2_results_{dataset}.csv",
-        progress=root / f"step2_progress_{dataset}.json",
+        database=root / "tasks.sqlite3",
+        manifest=root / "manifest.json",
+        results=root / "results.csv",
+        progress=root / "progress.json",
     )
 
 
@@ -56,7 +56,11 @@ def prepare_tasks(
     if not rebuild and any(path.exists() for path in all_paths):
         raise FileExistsError("Step 2 task state exists; pass rebuild=True to replace it")
     if rebuild:
-        for path in all_paths:
+        runtime_paths = (
+            paths.database.parent / "runner.pid",
+            paths.database.parent / "runner.log",
+        )
+        for path in (*all_paths, *runtime_paths):
             path.unlink(missing_ok=True)
         for suffix in ("-wal", "-shm"):
             paths.database.with_name(paths.database.name + suffix).unlink(missing_ok=True)

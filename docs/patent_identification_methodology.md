@@ -944,7 +944,7 @@ technical_scope,legal_scope,evidence,reason,review_flag,review_reason
 `human_evaluation=true` 映射为 `DATA_SECURITY`，`false` 映射为 `OTHER`。受控多标签和 evidence
 使用 JSON；`finalize` 将人工标签映射为 Step 2 的 `label`，再用同一 Pydantic Schema 校验标签、
 范围、处理活动、行业、证据、理由和复核状态的跨字段一致性。数据切分只在 5,000 条人工结果
-完整、唯一且与冻结盲标原文逐字段一致后执行：
+完整、唯一且与冻结复核原文逐字段一致后执行：
 
 ```text
 train = 4,000
@@ -1272,7 +1272,7 @@ eta_seconds = pending_tasks * average_completed_task_seconds / concurrency
 3. 任一抽样组容量不足时失败，不从其他组静默补齐；
 4. 多年份输入在每个抽样组内部进行容量约束的均衡分配；
 5. 相同输入、sampling version 和 seed 可复现完全相同的 `sample_id` 集合；
-6. 冻结正文保存在任务库中，正式人工判断不得暴露 Step 1/2 结论、置信度、理由、模型名或抽样组；
+6. 冻结正文保存在任务库中；`need_manual_review.csv` 展示 Step 2 结论、置信度、证据和理由，但不展示 Step 1 路由或抽样组；
 7. `manifest.json` 记录抽样层、Step 3 纳入概率、总体数和样本数；
 8. Codex 模拟使用本机 Codex 登录，不读取 `OPENAI_API_KEY`，并可按批断点续跑；
 9. Codex 输出只写 `simulation.csv`，不能生成训练切分或进入最终评估；

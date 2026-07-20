@@ -936,6 +936,36 @@ test。为保持完全相同文本同组，个别细分层允许偏离理想 8:1
 测试集一经发布即冻结，不参与 Prompt 修改、BERT 特征选择、SFT 训练、分类器选择或错误驱动的
 规则迭代；验证集用于上述开发选择，训练集用于参数拟合。
 
+### 8.6 Step 1/2 准确率与抽样加权评估
+
+`result.csv` 完成后执行：
+
+```bash
+python -m pipeline.step3 evaluate
+```
+
+程序以 `human_evaluation=true` 为 `DATA_SECURITY` 正类。Step 1 的评估将路由 `S` 映射为正预测、
+`E` 映射为负预测；Step 2 使用 `DATA_SECURITY/OTHER` 原始二分类标签。两步均输出 TP、TN、FP、
+FN，以及 Accuracy、Precision、Recall/Sensitivity、Specificity、NPV、F1、Balanced Accuracy、
+Matthews correlation coefficient、Cohen's Kappa。4,000 条样本的 Accuracy 另报告 Wilson 95%
+置信区间。
+
+每一步必须同时报告两个口径：
+
+| 口径 | 含义 | 论文使用限制 |
+| --- | --- | --- |
+| `sample_unweighted` | 4,000 条正例优先 Step 3 样本上的直接结果 | 只能描述该样本，不是总体准确率 |
+| `eligible_frame_design_weighted` | 按“年份×抽样组”的 Step 3 纳入概率倒数加权 | 只推广至 Step 3 合格任务池 |
+
+合格任务池定义为 `step2_label=DATA_SECURITY OR (step1_route=S AND step2_label=OTHER)`。当前 2021
+年任务池为 9,756 条，其中 Step 2 正例 6,718 条、`S→OTHER` 难负例 3,038 条。由于抽样设计未对
+`E→OTHER` 做人工复核，设计加权结果也不能推广到完整 Step 2 任务池或全部原始专利。尤其 Step 1
+的 `S/E` 原本用于高召回路由，不能把其诊断 Accuracy 当作最终分类器性能。
+
+评估结果及 `result.csv` 哈希、参考标签来源、抽样框、权重说明统一写入 `manifest.json` 的
+`evaluation`。若 `result.csv` 由专家结论与模型回退共同形成，论文必须按 manifest 中的
+`reference.provenance` 如实披露，不能写成全量人工 Gold。`finalize` 在生成切分后自动刷新评估。
+
 ## 9. Step 4：RoBERTa 分类模型与 MaaS SFT 数据
 
 ### 9.1 本阶段假设与输入冻结
@@ -1213,13 +1243,14 @@ eta_seconds = pending_tasks * average_completed_task_seconds / concurrency
 3. 任一抽样组容量不足时失败，不从其他组静默补齐；
 4. 多年份输入在每个抽样组内部进行容量约束的均衡分配；
 5. 相同输入、sampling version 和 seed 可复现完全相同的 `sample_id` 集合；
-6. 盲标文件不含 Step 1/2 结论、置信度、理由、模型名或抽样组；
-7. 审计文件记录 Step 2 与 Step 3 的纳入概率及两阶段组合权重；
+6. 冻结正文保存在任务库中，正式人工判断不得暴露 Step 1/2 结论、置信度、理由、模型名或抽样组；
+7. `manifest.json` 记录抽样层、Step 3 纳入概率、总体数和样本数；
 8. Codex 模拟使用本机 Codex 登录，不读取 `OPENAI_API_KEY`，并可按批断点续跑；
 9. Codex 输出只写 `simulation.csv`，不能生成训练切分或进入最终评估；
 10. 正式 Gold 对 10% 样本双标，并仲裁全部规定冲突；
 11. 人工 `result.csv` 与切分只保留规定的 12 列，最终全局切分严格为 3,200/400/400，且完全相同文本不跨数据集；
-12. 测试集冻结后不参与任何规则、Prompt、分类器选择或模型迭代。
+12. `evaluate` 同时报告样本指标和仅面向 Step 3 合格任务池的设计加权指标，并明确排除 `E→OTHER`；
+13. 测试集冻结后不参与任何规则、Prompt、分类器选择或模型迭代。
 
 ### 12.4 Step 4
 

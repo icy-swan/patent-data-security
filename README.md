@@ -84,12 +84,14 @@ Step 3 冻结 4,000 条样本并完成 3,200/400/400 切分，详细命令见
 人工标注结果固定写入 `data/step3/result.csv`，然后执行：
 
 ```bash
+python -m pipeline.step3 evaluate
 python -m pipeline.step3 finalize
 ```
 
 只有 `result.csv` 的 `human_evaluation=true/false` 会进入 `data/step3/dataset/` 下的训练、
-验证和测试切分；Codex 模拟
-结果不生成训练数据。
+验证和测试切分；Codex 模拟结果不生成训练数据。`evaluate` 会把 Step 1/2 的混淆矩阵、Accuracy、
+Precision、Recall、Specificity、F1 等样本指标和设计加权指标写入 `manifest.json`；`finalize`
+也会自动刷新这些指标。
 
 Step 4 从冻结切分生成 RoBERTa 分类数据和 MaaS `messages` JSONL：
 

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.step3.client import DEFAULT_MODEL, CodexAnnotationClient
+from pipeline.step3.evaluation import evaluate_pipeline_results
 from pipeline.step3.runner import read_progress, run_simulation
 from pipeline.step3.sampling import (
     SamplingConfig,
@@ -57,7 +58,17 @@ def build_parser() -> argparse.ArgumentParser:
         "finalize", help="Validate result.csv and create clean 8:1:1 human splits"
     )
     finalize.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    finalize.add_argument("--step2-dir", type=Path, default=DEFAULT_STEP2)
+    finalize.add_argument("--database", type=Path, action="append")
     finalize.add_argument("--split-seed", default="step3-human-split-v2.2.0")
+
+    evaluate = subparsers.add_parser(
+        "evaluate",
+        help="Evaluate Step 1 and Step 2 against result.csv",
+    )
+    evaluate.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    evaluate.add_argument("--step2-dir", type=Path, default=DEFAULT_STEP2)
+    evaluate.add_argument("--database", type=Path, action="append")
     return parser
 
 
@@ -85,8 +96,25 @@ def main() -> int:
     if args.command == "finalize":
         if not paths.results.is_file():
             raise SystemExit(f"Missing human annotation file: {paths.results}")
-        report = finalize_human_results(paths, split_seed=args.split_seed)
-        print(json.dumps(report, ensure_ascii=False, indent=2))
+        split_report = finalize_human_results(paths, split_seed=args.split_seed)
+        evaluation = evaluate_pipeline_results(
+            paths,
+            args.database or discover_step2_databases(args.step2_dir),
+        )
+        print(
+            json.dumps(
+                {"split_report": split_report, "evaluation": evaluation},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    if args.command == "evaluate":
+        evaluation = evaluate_pipeline_results(
+            paths,
+            args.database or discover_step2_databases(args.step2_dir),
+        )
+        print(json.dumps(evaluation, ensure_ascii=False, indent=2))
         return 0
     if not paths.database.is_file():
         raise SystemExit(f"Run prepare first; missing {paths.database}")

@@ -39,11 +39,29 @@ human_evaluation,scope_basis,industry_sectors
 ```
 
 `human_evaluation` 只能是 `true` 或 `false`，分别表示数据安全正类和负类；
-`scope_basis`、`industry_sectors` 使用 JSON 数组。生成正式 8:1:1 切分：
+`scope_basis`、`industry_sectors` 使用 JSON 数组。可先计算 Step 1/2 评估指标：
+
+```bash
+python -m pipeline.step3 evaluate
+```
+
+`evaluate` 以 `DATA_SECURITY` 为正类，Step 1 将 `S` 视为正预测、`E` 视为负预测，Step 2 直接
+使用其二分类标签。报告写入根目录 `manifest.json` 的 `evaluation`，包含混淆矩阵、Accuracy、
+Precision、Recall/Sensitivity、Specificity、NPV、F1、Balanced Accuracy、MCC、Cohen's Kappa
+及未加权 Accuracy 的 Wilson 95% 区间。
+
+报告同时提供 `sample_unweighted` 和 `eligible_frame_design_weighted`。后者按年份和抽样组使用
+Step 3 纳入概率的倒数加权，只能推广到“Step 2 正例 + `S→OTHER` 难负例”的 9,756 条合格
+任务池；由于 `E→OTHER` 未进入人工样本，两种结果都不能表述为全量原始专利的总体准确率。
+Step 1 的 `S/E` 本来是路由而非最终分类，其指标仅作诊断。
+
+生成正式 8:1:1 切分：
 
 ```bash
 python -m pipeline.step3 finalize
 ```
+
+`finalize` 会在切分完成后自动重新计算并写入上述 Step 1/2 指标。
 
 人工完成前，根目录固定为 `simulation.csv`、`manifest.json`、`tasks.sqlite3`、`progress.json`，
 并等待 `result.csv`。`finalize` 后新增 `dataset/{train,validation,test}.csv`，切分报告合并写入

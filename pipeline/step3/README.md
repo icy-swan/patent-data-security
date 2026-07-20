@@ -10,17 +10,10 @@ python -m pipeline.step3 prepare
 难负例；两个抽样组内部按输入年份尽可能等额分配。任一抽样组容量不足时命令失败，
 不会从 `E → OTHER` 静默补充容易负例。
 
-已有 4,000 条 v2.2.0 样本时使用增量扩展，不重建旧任务：
-
-```bash
-python -m pipeline.step3 expand
-```
-
-该命令保留原 3,000 条正向候选和 1,000 条难负向候选，再增加 1,000 条难负例；新增的盲标
-输入写入 `annotation_increment.csv`。抽样配额、输入数据库和分层汇总写入根目录
-`manifest.json`；5,000 条冻结正文和模拟任务状态
-保存在 `tasks.sqlite3`，不再额外输出会干扰阅读的抽样过程 CSV。
-扩容前的 3,200/400/400 旧切分归档到 `archive/human-split-v2.2.0/`，不得用于新版 Step 4。
+抽样完成后的正式目录只有三项：`manifest.json`、`tasks.sqlite3` 和
+`need_manual_review.csv`。人工复核 CSV 覆盖全部 5,000 条，展示 Step 2 的标签、置信度、
+受控维度、技术/法律范围、逐字证据、`step2_reason` 和复核标记；人工填写最后两列
+`human_evaluation` 与 `human_reason`。这轮属于对 Step 2 结论的人工复核，不是盲标。
 
 开发期使用本机已经登录的 Codex 独立模拟标注，不读取 `OPENAI_API_KEY`：
 
@@ -75,7 +68,7 @@ python -m pipeline.step3 finalize
 
 `finalize` 会在切分完成后自动重新计算并写入上述 Step 1/2 指标。
 
-人工完成前，根目录固定为 `simulation.csv`、`manifest.json`、`tasks.sqlite3`、`progress.json`，
-并等待 `result.csv`。`finalize` 后新增 `dataset/{train,validation,test}.csv`，切分报告合并写入
-根目录 `manifest.json`。三个切分文件与 `result.csv` 使用完全相同的结构化人工结果 Schema，
-不携带前序模型、抽样概率或请求运行元数据。
+人工完成前，根目录固定为 `manifest.json`、`tasks.sqlite3` 和 `need_manual_review.csv`。
+只有显式执行可选的 `simulate` 时才会暂时产生 `progress.json` 与 `simulation.csv`。
+`finalize` 后新增 `result.csv` 和 `dataset/{train,validation,test}.csv`；三个切分文件与
+`result.csv` 使用完全相同的结构化人工结果 Schema，不携带抽样概率或请求运行元数据。

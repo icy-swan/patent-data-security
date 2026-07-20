@@ -9,10 +9,12 @@ import pytest
 
 from pipeline.step3.runner import _exclusive_lock, _runner_active
 from pipeline.step3.sampling import (
+    MANUAL_REVIEW_FIELDS,
     RESULT_FIELDS,
     SamplingConfig,
     _balanced_capacity_allocation,
     _initialize_task_database,
+    _manual_review_row,
     _sampling_group,
     assign_exact_splits,
     discover_step2_databases,
@@ -26,6 +28,39 @@ def test_default_sampling_config_expands_only_the_hard_negative_quota() -> None:
 
     assert config.target_size == 5_000
     assert config.group_targets == {"positive": 3_000, "hard_negative": 2_000}
+
+
+def test_manual_review_row_exposes_step2_reason_and_blanks_human_fields() -> None:
+    row = {
+        "sample_id": "sample-1",
+        "dataset_id": "2021",
+        "application_year": "2021",
+        "patent_id": "CN1",
+        "title": "标题",
+        "abstract": "摘要",
+        "claim": "权利要求",
+        "ipc": "G06F21/00",
+        "main_ipc": "G06F21/00",
+        "step2_label": "OTHER",
+        "step2_confidence": 0.9,
+        "step2_scope_basis": ["other"],
+        "step2_processing_activities": ["other"],
+        "step2_industry_sectors": ["other"],
+        "step2_technical_scope": "普通数据处理",
+        "step2_legal_scope": "未跨过数据安全边界",
+        "step2_evidence": [{"field": "abstract", "quote": "摘要"}],
+        "step2_reason": "没有实质安全机制",
+        "step2_review_flag": False,
+        "step2_review_reason": "",
+    }
+
+    review = _manual_review_row(row)
+
+    assert tuple(review) == MANUAL_REVIEW_FIELDS
+    assert review["step2_reason"] == "没有实质安全机制"
+    assert json.loads(review["step2_evidence"])[0]["quote"] == "摘要"
+    assert review["human_evaluation"] == ""
+    assert review["human_reason"] == ""
 
 
 def test_sampling_groups_prioritize_positives_and_s_to_other_hard_negatives() -> None:

@@ -91,6 +91,23 @@ RESULT_FIELDS = (
     "review_reason",
 )
 
+MANUAL_REVIEW_FIELDS = (
+    *FROZEN_RESULT_FIELDS,
+    "step2_label",
+    "step2_confidence",
+    "step2_scope_basis",
+    "step2_processing_activities",
+    "step2_industry_sectors",
+    "step2_technical_scope",
+    "step2_legal_scope",
+    "step2_evidence",
+    "step2_reason",
+    "step2_review_flag",
+    "step2_review_reason",
+    "human_evaluation",
+    "human_reason",
+)
+
 
 @dataclass(frozen=True)
 class SamplingConfig:
@@ -114,6 +131,7 @@ class Step3Paths:
     manifest: Path
     progress: Path
     simulation: Path
+    manual_review: Path
     results: Path
     train: Path
     validation: Path
@@ -128,6 +146,7 @@ def step3_paths(output_dir: str | Path) -> Step3Paths:
         manifest=root / "manifest.json",
         progress=root / "progress.json",
         simulation=root / "simulation.csv",
+        manual_review=root / "need_manual_review.csv",
         results=root / "result.csv",
         train=root / "dataset" / "train.csv",
         validation=root / "dataset" / "validation.csv",
@@ -241,6 +260,11 @@ def prepare_sample(
         raise ValueError("Selected sample contains duplicate patent_id values")
 
     _initialize_task_database(paths.database, selected)
+    _write_csv(
+        paths.manual_review,
+        MANUAL_REVIEW_FIELDS,
+        (_manual_review_row(row) for row in selected),
+    )
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "sampling_version": SAMPLING_VERSION,
@@ -268,7 +292,7 @@ def prepare_sample(
         "step2_sources": source_summary,
         "outputs": {
             key: str(getattr(paths, key))
-            for key in ("database", "manifest", "progress", "simulation")
+            for key in ("database", "manifest", "manual_review")
         },
         "simulation_policy": {
             "simulation_is_human_gold": False,
@@ -280,6 +304,14 @@ def prepare_sample(
             "allowed_values": ["true", "false"],
             "result_fields": list(RESULT_FIELDS),
         },
+        "manual_review_policy": {
+            "path": str(paths.manual_review),
+            "sha256": sha256_file(paths.manual_review),
+            "records": config.target_size,
+            "fields": list(MANUAL_REVIEW_FIELDS),
+            "step2_decision_visible": True,
+            "human_fields_initially_blank": ["human_evaluation", "human_reason"],
+        },
         "finalize_outputs": {
             "result": str(paths.results),
             "train": str(paths.train),
@@ -289,22 +321,6 @@ def prepare_sample(
         "prepared_at": _now(),
     }
     atomic_json_write(paths.manifest, manifest)
-    atomic_json_write(
-        paths.progress,
-        {
-            "schema_version": SCHEMA_VERSION,
-            "status": "prepared",
-            "total": config.target_size,
-            "completed": 0,
-            "succeeded": 0,
-            "failed": 0,
-            "pending": config.target_size,
-            "progress_percent": 0.0,
-            "database": str(paths.database),
-            "simulation": str(paths.simulation),
-            "prepared_at": _now(),
-        },
-    )
     return paths, manifest
 
 
@@ -357,6 +373,8 @@ def expand_sample(
             )
         }
         desired_connection.close()
+        with desired_paths.manual_review.open(encoding="utf-8-sig", newline="") as file:
+            desired_manual_review = list(csv.DictReader(file))
 
     with _exclusive_database_update(paths.database):
         connection = sqlite3.connect(paths.database)
@@ -431,29 +449,12 @@ def expand_sample(
         )
         connection.close()
 
-    increment_path = paths.root / "annotation_increment.csv"
-    increment_rows = []
-    for row in additions:
-        payload = json.loads(str(row["payload_json"]))
-        increment_rows.append(
-            {
-                "sample_id": row["sample_id"],
-                "dataset_id": row["dataset_id"],
-                "application_year": row["application_year"],
-                "patent_id": row["patent_id"],
-                **{
-                    field: str(payload.get(field, "") or "")
-                    for field in ("title", "abstract", "claim", "ipc", "main_ipc")
-                },
-            }
-        )
-    _write_csv(increment_path, RESULT_FIELDS, increment_rows)
+    _write_csv(paths.manual_review, MANUAL_REVIEW_FIELDS, desired_manual_review)
 
     desired_manifest["outputs"] = {
         key: str(getattr(paths, key))
-        for key in ("database", "manifest", "progress", "simulation")
+        for key in ("database", "manifest", "manual_review")
     }
-    desired_manifest["outputs"]["annotation_increment"] = str(increment_path)
     desired_manifest["human_results_policy"]["path"] = str(paths.results)
     desired_manifest["finalize_outputs"] = {
         "result": str(paths.results),
@@ -480,23 +481,6 @@ def expand_sample(
         "stale_split_files_must_not_be_used": True,
     }
     atomic_json_write(paths.manifest, desired_manifest)
-    completed = int(status_counts.get("succeeded", 0))
-    atomic_json_write(
-        paths.progress,
-        {
-            "schema_version": SCHEMA_VERSION,
-            "status": "expanded_pending_annotation",
-            "total": config.target_size,
-            "completed": completed,
-            "succeeded": completed,
-            "failed": int(status_counts.get("failed", 0)),
-            "pending": config.target_size - completed,
-            "progress_percent": round(completed / config.target_size * 100, 4),
-            "database": str(paths.database),
-            "simulation": str(paths.simulation),
-            "updated_at": _now(),
-        },
-    )
     return paths, desired_manifest
 
 
@@ -773,7 +757,15 @@ def _load_population(
                 "step2_label": result.label,
                 "sampling_group": _sampling_group(row["route"], result.label),
                 "step2_confidence": result.confidence,
+                "step2_scope_basis": result.scope_basis,
+                "step2_processing_activities": result.processing_activities,
+                "step2_industry_sectors": result.industry_sectors,
+                "step2_technical_scope": result.technical_scope,
+                "step2_legal_scope": result.legal_scope,
+                "step2_evidence": [item.model_dump() for item in result.evidence],
+                "step2_reason": result.reason,
                 "step2_review_flag": result.review_flag,
+                "step2_review_reason": result.review_reason,
                 "step2_requested_model": row["requested_model"] or "",
                 "step2_actual_model": row["actual_model"] or "",
                 "step2_prompt_version": row["prompt_version"] or "",
@@ -976,6 +968,29 @@ def _simulation_row(row: Mapping[str, Any]) -> dict[str, Any]:
             else row.get(field, "")
         )
         for field in SIMULATION_FIELDS
+    }
+
+
+def _manual_review_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    json_fields = {
+        "step2_scope_basis",
+        "step2_processing_activities",
+        "step2_industry_sectors",
+        "step2_evidence",
+    }
+    return {
+        field: (
+            json.dumps(row.get(field, []), ensure_ascii=False)
+            if field in json_fields
+            else "true"
+            if field == "step2_review_flag" and bool(row.get(field))
+            else "false"
+            if field == "step2_review_flag"
+            else ""
+            if field in {"human_evaluation", "human_reason"}
+            else row.get(field, "")
+        )
+        for field in MANUAL_REVIEW_FIELDS
     }
 
 

@@ -16,6 +16,7 @@ from pipeline.common.io import atomic_json_write, sha256_file
 from pipeline.step3.sampling import (
     FROZEN_RESULT_FIELDS,
     LABELS,
+    SCHEMA_VERSION,
     Step3Paths,
     _parse_human_evaluation,
     _validate_human_result_identity,
@@ -30,13 +31,13 @@ def evaluate_pipeline_results(
 ) -> dict[str, Any]:
     """Calculate sample and design-weighted Step 1/2 binary metrics.
 
-    Design weights expand the 4,000 sampled records only to Step 3's eligible
+    Design weights expand the 5,000 sampled records only to Step 3's eligible
     Step 2 frame: all Step 2 DATA_SECURITY records plus S-to-OTHER hard
     negatives. They do not estimate performance over excluded E-to-OTHER rows.
     """
 
     manifest = _read_manifest(paths.manifest)
-    expected_count = int(manifest.get("target_size", 4_000))
+    expected_count = int(manifest.get("target_size", 5_000))
     references = _read_reference_results(paths, expected_count=expected_count)
     step2_rows = _read_step2_rows(step2_databases)
     strata = _read_strata(manifest)
@@ -85,7 +86,7 @@ def evaluate_pipeline_results(
         )
 
     report = {
-        "schema_version": "2.2.0",
+        "schema_version": SCHEMA_VERSION,
         "evaluation_type": "binary_classification_against_step3_result",
         "reference": {
             "path": str(paths.results),
@@ -141,7 +142,7 @@ def evaluate_pipeline_results(
             "recommended_primary_view": "eligible_frame_design_weighted",
             "limitations": [
                 (
-                    "Unweighted metrics describe only the positive-priority 4,000-record "
+                    "Unweighted metrics describe only the positive-priority 5,000-record "
                     "Step 3 sample and are not full-population accuracy estimates."
                 ),
                 (

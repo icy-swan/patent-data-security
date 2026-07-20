@@ -1,23 +1,36 @@
-"""Reproducible 4,000-record sampling and exact 8:1:1 splitting."""
+"""Reproducible 5,000-record sampling and exact 8:1:1 splitting."""
 
 from __future__ import annotations
 
 import csv
+import fcntl
 import hashlib
 import json
 import os
 import sqlite3
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, get_args
 
 from pipeline.common.io import atomic_json_write, sha256_file
-from pipeline.step2.schema import IndustrySector, PatentClassification, ScopeBasis
+from pipeline.step2.schema import (
+    IndustrySector,
+    PatentClassification,
+    ProcessingActivity,
+    ScopeBasis,
+)
 
-SAMPLING_VERSION = "step3-positive-priority-hard-negative-v2.2.0"
+SAMPLING_VERSION = "step3-positive-priority-hard-negative-v2.3.0"
+SCHEMA_VERSION = "2.3.0"
+# Keep the v2.2.0 seed so the original 4,000 records remain a strict subset
+# of the expanded 5,000-record sample. This preserves completed review work.
+COMPATIBLE_SAMPLE_SEED = "step3-positive-priority-hard-negative-v2.2.0"
+COMPATIBLE_SAMPLE_ID_VERSION = "step3-positive-priority-hard-negative-v2.2.0"
 LABELS = ("DATA_SECURITY", "OTHER")
 SAMPLING_GROUPS = ("positive", "hard_negative")
 SPLITS = ("train", "validation", "test")
@@ -66,17 +79,25 @@ FROZEN_RESULT_FIELDS = (
 RESULT_FIELDS = (
     *FROZEN_RESULT_FIELDS,
     "human_evaluation",
+    "confidence",
     "scope_basis",
+    "processing_activities",
     "industry_sectors",
+    "technical_scope",
+    "legal_scope",
+    "evidence",
+    "reason",
+    "review_flag",
+    "review_reason",
 )
 
 
 @dataclass(frozen=True)
 class SamplingConfig:
-    target_size: int = 4_000
+    target_size: int = 5_000
     positive_size: int = 3_000
-    hard_negative_size: int = 1_000
-    seed: str = "step3-positive-priority-hard-negative-v2.2.0"
+    hard_negative_size: int = 2_000
+    seed: str = COMPATIBLE_SAMPLE_SEED
 
     @property
     def group_targets(self) -> dict[str, int]:
@@ -221,8 +242,9 @@ def prepare_sample(
 
     _initialize_task_database(paths.database, selected)
     manifest = {
-        "schema_version": "2.2.0",
+        "schema_version": SCHEMA_VERSION,
         "sampling_version": SAMPLING_VERSION,
+        "sample_id_version": COMPATIBLE_SAMPLE_ID_VERSION,
         "target_size": config.target_size,
         "sampling_group_targets": config.group_targets,
         "positive_definition": "step2_label=DATA_SECURITY",
@@ -270,7 +292,7 @@ def prepare_sample(
     atomic_json_write(
         paths.progress,
         {
-            "schema_version": "2.2.0",
+            "schema_version": SCHEMA_VERSION,
             "status": "prepared",
             "total": config.target_size,
             "completed": 0,
@@ -284,6 +306,198 @@ def prepare_sample(
         },
     )
     return paths, manifest
+
+
+def expand_sample(
+    databases: Iterable[str | Path],
+    output_dir: str | Path,
+    *,
+    config: SamplingConfig | None = None,
+) -> tuple[Step3Paths, dict[str, Any]]:
+    """Expand the frozen v2.2.0 sample without changing its existing 4,000 rows."""
+
+    config = config or SamplingConfig()
+    _validate_config(config)
+    paths = step3_paths(output_dir)
+    if not paths.database.is_file() or not paths.manifest.is_file():
+        raise FileNotFoundError(
+            "Step 3 expand requires an existing tasks.sqlite3 and manifest.json"
+        )
+    database_paths = sorted({Path(path).resolve() for path in databases})
+    if not database_paths:
+        raise ValueError("At least one Step 2 database is required")
+
+    previous_manifest = json.loads(paths.manifest.read_text(encoding="utf-8"))
+    previous_manifest_sha256 = sha256_file(paths.manifest)
+    previous_target = int(previous_manifest.get("target_size", 0))
+    if previous_target != 4_000:
+        raise ValueError(
+            f"Step 3 expand only accepts the frozen 4,000-record baseline, found {previous_target}"
+        )
+    if previous_manifest.get("seed") != config.seed:
+        raise ValueError(
+            "Existing Step 3 seed differs; expansion would not preserve sample identity"
+        )
+
+    with TemporaryDirectory(prefix="step3-expand-") as temporary_dir:
+        desired_paths, desired_manifest = prepare_sample(
+            database_paths,
+            temporary_dir,
+            config=config,
+        )
+        desired_connection = sqlite3.connect(
+            f"file:{desired_paths.database}?mode=ro&immutable=1", uri=True
+        )
+        desired_connection.row_factory = sqlite3.Row
+        desired_rows = {
+            str(row["sample_id"]): dict(row)
+            for row in desired_connection.execute(
+                "SELECT sample_id,dataset_id,application_year,patent_id,payload_json "
+                "FROM tasks ORDER BY sample_id"
+            )
+        }
+        desired_connection.close()
+
+    with _exclusive_database_update(paths.database):
+        connection = sqlite3.connect(paths.database)
+        connection.row_factory = sqlite3.Row
+        if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            connection.close()
+            raise ValueError(f"SQLite integrity check failed for {paths.database}")
+        existing_rows = {
+            str(row["sample_id"]): dict(row)
+            for row in connection.execute(
+                "SELECT sample_id,dataset_id,application_year,patent_id,payload_json "
+                "FROM tasks ORDER BY sample_id"
+            )
+        }
+        if len(existing_rows) != previous_target:
+            connection.close()
+            raise ValueError(
+                "Existing task count differs from manifest: "
+                f"{len(existing_rows)} != {previous_target}"
+            )
+        unexpected = sorted(set(existing_rows) - set(desired_rows))
+        if unexpected:
+            connection.close()
+            raise ValueError(
+                "Existing sample is not a subset of the expanded sample: "
+                f"{unexpected[:5]}"
+            )
+        for sample_id, existing in existing_rows.items():
+            desired = desired_rows[sample_id]
+            for field in (
+                "dataset_id",
+                "application_year",
+                "patent_id",
+                "payload_json",
+            ):
+                if str(existing[field]) != str(desired[field]):
+                    connection.close()
+                    raise ValueError(
+                        f"Expanded sample changed {field} for existing sample {sample_id}"
+                    )
+
+        additions = [desired_rows[key] for key in sorted(set(desired_rows) - set(existing_rows))]
+        if len(additions) != config.target_size - previous_target:
+            connection.close()
+            raise AssertionError(
+                f"Expected {config.target_size - previous_target} additions, found {len(additions)}"
+            )
+        now = _now()
+        connection.executemany(
+            """
+            INSERT INTO tasks (
+              sample_id,dataset_id,application_year,patent_id,payload_json,
+              status,created_at,updated_at
+            ) VALUES (?,?,?,?,?,'pending',?,?)
+            """,
+            [
+                (
+                    row["sample_id"],
+                    row["dataset_id"],
+                    row["application_year"],
+                    row["patent_id"],
+                    row["payload_json"],
+                    now,
+                    now,
+                )
+                for row in additions
+            ],
+        )
+        connection.commit()
+        status_counts = dict(
+            connection.execute("SELECT status,COUNT(*) FROM tasks GROUP BY status")
+        )
+        connection.close()
+
+    increment_path = paths.root / "annotation_increment.csv"
+    increment_rows = []
+    for row in additions:
+        payload = json.loads(str(row["payload_json"]))
+        increment_rows.append(
+            {
+                "sample_id": row["sample_id"],
+                "dataset_id": row["dataset_id"],
+                "application_year": row["application_year"],
+                "patent_id": row["patent_id"],
+                **{
+                    field: str(payload.get(field, "") or "")
+                    for field in ("title", "abstract", "claim", "ipc", "main_ipc")
+                },
+            }
+        )
+    _write_csv(increment_path, RESULT_FIELDS, increment_rows)
+
+    desired_manifest["outputs"] = {
+        key: str(getattr(paths, key))
+        for key in ("database", "manifest", "progress", "simulation")
+    }
+    desired_manifest["outputs"]["annotation_increment"] = str(increment_path)
+    desired_manifest["human_results_policy"]["path"] = str(paths.results)
+    desired_manifest["finalize_outputs"] = {
+        "result": str(paths.results),
+        "train": str(paths.train),
+        "validation": str(paths.validation),
+        "test": str(paths.test),
+    }
+    desired_manifest["expansion"] = {
+        "strategy": "preserve_v2.2.0_4000_and_add_1000_hard_negatives",
+        "previous_manifest_sha256": previous_manifest_sha256,
+        "previous_target_size": previous_target,
+        "preserved_tasks": len(existing_rows),
+        "added_tasks": len(additions),
+        "added_task_status": "pending",
+        "previous_result_records": _csv_record_count(paths.results),
+        "previous_result_sha256": sha256_file(paths.results) if paths.results.is_file() else None,
+        "previous_human_results_status": "partial_for_expanded_sample",
+        "previous_result_provenance": previous_manifest.get("result_preparation"),
+        "expanded_at": _now(),
+    }
+    desired_manifest["annotation_state"] = {
+        "status_counts": dict(sorted(status_counts.items())),
+        "result_is_complete": False,
+        "stale_split_files_must_not_be_used": True,
+    }
+    atomic_json_write(paths.manifest, desired_manifest)
+    completed = int(status_counts.get("succeeded", 0))
+    atomic_json_write(
+        paths.progress,
+        {
+            "schema_version": SCHEMA_VERSION,
+            "status": "expanded_pending_annotation",
+            "total": config.target_size,
+            "completed": completed,
+            "succeeded": completed,
+            "failed": int(status_counts.get("failed", 0)),
+            "pending": config.target_size - completed,
+            "progress_percent": round(completed / config.target_size * 100, 4),
+            "database": str(paths.database),
+            "simulation": str(paths.simulation),
+            "updated_at": _now(),
+        },
+    )
+    return paths, desired_manifest
 
 
 def assign_exact_splits(
@@ -375,7 +589,7 @@ def write_simulation_dataset(
         (_simulation_row(row) for row in normalized),
     )
     return {
-        "schema_version": "2.2.0",
+        "schema_version": SCHEMA_VERSION,
         "annotation_source": "codex_model_simulation",
         "annotation_model": annotation_model,
         "annotation_prompt_version": annotation_prompt_version,
@@ -391,8 +605,8 @@ def write_simulation_dataset(
 def finalize_human_results(
     paths: Step3Paths,
     *,
-    split_seed: str = "step3-human-split-v2.2.0",
-    expected_count: int = 4_000,
+    split_seed: str = "step3-human-split-v2.3.0",
+    expected_count: int = 5_000,
 ) -> dict[str, Any]:
     """Validate and sanitize human result.csv, then create minimal 8:1:1 splits."""
 
@@ -413,35 +627,55 @@ def finalize_human_results(
     normalized: list[dict[str, Any]] = []
     for row_number, row in enumerate(raw_rows, start=2):
         evaluation = _parse_human_evaluation(row["human_evaluation"], row_number=row_number)
-        scope_basis = _parse_controlled_list(
-            row["scope_basis"],
-            field="scope_basis",
-            allowed=set(get_args(ScopeBasis)),
-            maximum=3,
-            row_number=row_number,
+        annotation = PatentClassification.model_validate(
+            {
+                "label": "DATA_SECURITY" if evaluation else "OTHER",
+                "confidence": _parse_confidence(row["confidence"], row_number=row_number),
+                "scope_basis": _parse_controlled_list(
+                    row["scope_basis"],
+                    field="scope_basis",
+                    allowed=set(get_args(ScopeBasis)),
+                    maximum=3,
+                    row_number=row_number,
+                ),
+                "processing_activities": _parse_controlled_list(
+                    row["processing_activities"],
+                    field="processing_activities",
+                    allowed=set(get_args(ProcessingActivity)),
+                    maximum=8,
+                    row_number=row_number,
+                ),
+                "industry_sectors": _parse_controlled_list(
+                    row["industry_sectors"],
+                    field="industry_sectors",
+                    allowed=set(get_args(IndustrySector)),
+                    maximum=9,
+                    row_number=row_number,
+                ),
+                "technical_scope": str(row["technical_scope"] or "").strip(),
+                "legal_scope": str(row["legal_scope"] or "").strip(),
+                "evidence": _parse_json_value(
+                    row["evidence"], field="evidence", row_number=row_number
+                ),
+                "reason": str(row["reason"] or "").strip(),
+                "review_flag": _parse_boolean(
+                    row["review_flag"], field="review_flag", row_number=row_number
+                ),
+                "review_reason": str(row["review_reason"] or "").strip(),
+            }
         )
-        industry_sectors = _parse_controlled_list(
-            row["industry_sectors"],
-            field="industry_sectors",
-            allowed=set(get_args(IndustrySector)),
-            maximum=9,
-            row_number=row_number,
-        )
-        if not evaluation and scope_basis != ["other"]:
-            raise ValueError(f"Row {row_number}: false requires scope_basis=['other']")
-        if not evaluation and industry_sectors != ["other"]:
-            raise ValueError(f"Row {row_number}: false requires industry_sectors=['other']")
-        if evaluation and "other" in scope_basis:
-            raise ValueError(f"Row {row_number}: true cannot use scope_basis='other'")
         item = {field: str(row.get(field, "") or "") for field in FROZEN_RESULT_FIELDS}
         item.update(
             {
                 "human_evaluation": evaluation,
-                "scope_basis": scope_basis,
-                "industry_sectors": industry_sectors,
-                "label": "DATA_SECURITY" if evaluation else "OTHER",
+                **annotation.model_dump(),
             }
         )
+        for evidence in annotation.evidence:
+            if evidence.quote not in item[evidence.field]:
+                raise ValueError(
+                    f"Row {row_number}: evidence quote is not verbatim in {evidence.field}"
+                )
         normalized.append(item)
 
     _validate_human_result_identity(paths.database, normalized, expected_count=expected_count)
@@ -462,7 +696,7 @@ def finalize_human_results(
     _write_csv(paths.test, RESULT_FIELDS, (_result_row(row) for row in by_split["test"]))
     report.update(
         {
-            "schema_version": "2.2.0",
+            "schema_version": SCHEMA_VERSION,
             "source": "human_results_csv",
             "source_path": str(paths.results),
             "source_sha256": sha256_file(paths.results),
@@ -634,12 +868,12 @@ def _validate_config(config: SamplingConfig) -> None:
     if config.positive_size + config.hard_negative_size != config.target_size:
         raise ValueError("positive_size + hard_negative_size must equal target_size")
     if (
-        config.target_size != 4_000
+        config.target_size != 5_000
         or config.positive_size != 3_000
-        or config.hard_negative_size != 1_000
+        or config.hard_negative_size != 2_000
     ):
         raise ValueError(
-            "Step 3 v2.2.0 freezes 3,000 positives and 1,000 S-to-OTHER hard negatives"
+            "Step 3 v2.3.0 freezes 3,000 positives and 2,000 S-to-OTHER hard negatives"
         )
 
 
@@ -746,14 +980,24 @@ def _simulation_row(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _result_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    json_fields = {
+        "scope_basis",
+        "processing_activities",
+        "industry_sectors",
+        "evidence",
+    }
     return {
         field: (
             "true"
             if field == "human_evaluation" and bool(row.get(field))
             else "false"
             if field == "human_evaluation"
+            else "true"
+            if field == "review_flag" and bool(row.get(field))
+            else "false"
+            if field == "review_flag"
             else json.dumps(row.get(field, []), ensure_ascii=False)
-            if field in {"scope_basis", "industry_sectors"}
+            if field in json_fields
             else row.get(field, "")
         )
         for field in RESULT_FIELDS
@@ -769,6 +1013,32 @@ def _parse_human_evaluation(value: Any, *, row_number: int) -> bool:
     raise ValueError(
         f"Row {row_number}: human_evaluation must be exactly true or false, got {value!r}"
     )
+
+
+def _parse_boolean(value: Any, *, field: str, row_number: int) -> bool:
+    normalized = str(value or "").strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise ValueError(f"Row {row_number}: {field} must be exactly true or false, got {value!r}")
+
+
+def _parse_confidence(value: Any, *, row_number: int) -> float:
+    try:
+        confidence = float(str(value).strip())
+    except ValueError as exc:
+        raise ValueError(f"Row {row_number}: confidence must be a number") from exc
+    if not 0 <= confidence <= 1:
+        raise ValueError(f"Row {row_number}: confidence must be between 0 and 1")
+    return confidence
+
+
+def _parse_json_value(value: Any, *, field: str, row_number: int) -> Any:
+    try:
+        return json.loads(str(value or ""))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Row {row_number}: {field} must be valid JSON") from exc
 
 
 def _parse_controlled_list(
@@ -925,6 +1195,31 @@ def _text_group_id(row: Mapping[str, Any]) -> str:
     return "text:" + hashlib.sha256(text.encode()).hexdigest()
 
 
+@contextmanager
+def _exclusive_database_update(database: Path) -> Iterator[None]:
+    lock_path = database.with_name(database.name + ".run.lock")
+    owns_lock = False
+    try:
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError(f"A Step 3 runner is active for {database}") from None
+            owns_lock = True
+            yield
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    finally:
+        if owns_lock:
+            lock_path.unlink(missing_ok=True)
+
+
+def _csv_record_count(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    with path.open(encoding="utf-8-sig", newline="") as file:
+        return sum(1 for _ in csv.DictReader(file))
+
+
 def _write_csv(path: Path, fields: tuple[str, ...], rows: Iterable[Mapping[str, Any]]) -> None:
     temporary = path.with_suffix(path.suffix + ".partial")
     with temporary.open("w", encoding="utf-8-sig", newline="") as file:
@@ -940,7 +1235,7 @@ def _stable_score(*parts: str) -> str:
 
 def _sample_id(seed: str, dataset_id: str, patent_id: str) -> str:
     digest = hashlib.blake2b(
-        f"{SAMPLING_VERSION}|{seed}|{dataset_id}|{patent_id}".encode(),
+        f"{COMPATIBLE_SAMPLE_ID_VERSION}|{seed}|{dataset_id}|{patent_id}".encode(),
         digest_size=12,
     ).hexdigest()
     return f"step3-{digest}"

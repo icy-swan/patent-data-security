@@ -1,24 +1,33 @@
 # Step 3：人工标注与开发期模型模拟
 
-先从一个或多个已完成的 Step 2 SQLite 数据库冻结 4,000 条样本：
+新项目从一个或多个已完成的 Step 2 SQLite 数据库冻结 5,000 条样本：
 
 ```bash
 python -m pipeline.step3 prepare
 ```
 
-抽样固定为 3,000 条 Step 2 `DATA_SECURITY` 正例和 1,000 条 `Step 1=S → Step 2=OTHER`
+抽样固定为 3,000 条 Step 2 `DATA_SECURITY` 正例和 2,000 条 `Step 1=S → Step 2=OTHER`
 难负例；两个抽样组内部按输入年份尽可能等额分配。任一抽样组容量不足时命令失败，
 不会从 `E → OTHER` 静默补充容易负例。
 
-抽样配额、输入数据库和分层汇总写入根目录 `manifest.json`；4,000 条冻结正文和模拟任务状态
+已有 4,000 条 v2.2.0 样本时使用增量扩展，不重建旧任务：
+
+```bash
+python -m pipeline.step3 expand
+```
+
+该命令保留原 3,000 条正向候选和 1,000 条难负向候选，再增加 1,000 条难负例；新增的盲标
+输入写入 `annotation_increment.csv`。抽样配额、输入数据库和分层汇总写入根目录
+`manifest.json`；5,000 条冻结正文和模拟任务状态
 保存在 `tasks.sqlite3`，不再额外输出会干扰阅读的抽样过程 CSV。
+扩容前的 3,200/400/400 旧切分归档到 `archive/human-split-v2.2.0/`，不得用于新版 Step 4。
 
 开发期使用本机已经登录的 Codex 独立模拟标注，不读取 `OPENAI_API_KEY`：
 
 ```bash
 python -m pipeline.step3 simulate \
   --model gpt-5.6-sol \
-  --reasoning-effort high \
+  --reasoning-effort low \
   --batch-size 20
 ```
 
@@ -31,15 +40,18 @@ python -m pipeline.step3 simulate \
 开发流程、提示词和人工复核辅助，不能替代正式人工结果，也不能进入训练切分。
 
 人工标注完成后，将结果放到根目录 `result.csv`。该文件允许临时带有其他列；执行
-`finalize` 时会验证 4,000 条记录与 `tasks.sqlite3` 冻结正文完全对应，并删除所有非训练字段：
+`finalize` 时会验证 5,000 条记录与 `tasks.sqlite3` 冻结正文完全对应。除人工最终标签外，
+还要求理由、逐字证据和受控维度满足 Step 2 的同一结构化 Schema：
 
 ```text
 sample_id,dataset_id,application_year,patent_id,title,abstract,claim,ipc,main_ipc,
-human_evaluation,scope_basis,industry_sectors
+human_evaluation,confidence,scope_basis,processing_activities,industry_sectors,technical_scope,legal_scope,
+evidence,reason,review_flag,review_reason
 ```
 
 `human_evaluation` 只能是 `true` 或 `false`，分别表示数据安全正类和负类；
-`scope_basis`、`industry_sectors` 使用 JSON 数组。可先计算 Step 1/2 评估指标：
+`scope_basis`、`processing_activities`、`industry_sectors` 和 `evidence` 使用 JSON。理由和证据
+必须与人工最终标签一致。可先计算 Step 1/2 评估指标：
 
 ```bash
 python -m pipeline.step3 evaluate
@@ -65,5 +77,5 @@ python -m pipeline.step3 finalize
 
 人工完成前，根目录固定为 `simulation.csv`、`manifest.json`、`tasks.sqlite3`、`progress.json`，
 并等待 `result.csv`。`finalize` 后新增 `dataset/{train,validation,test}.csv`，切分报告合并写入
-根目录 `manifest.json`。三个切分文件与 `result.csv` 使用完全相同的 12 列精简 Schema，不携带
-前序模型、抽样或复核过程字段。
+根目录 `manifest.json`。三个切分文件与 `result.csv` 使用完全相同的结构化人工结果 Schema，
+不携带前序模型、抽样概率或请求运行元数据。

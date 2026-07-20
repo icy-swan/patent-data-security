@@ -15,6 +15,7 @@ from pipeline.step3.runner import read_progress, run_simulation
 from pipeline.step3.sampling import (
     SamplingConfig,
     discover_step2_databases,
+    expand_sample,
     finalize_human_results,
     prepare_sample,
     step3_paths,
@@ -30,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    prepare = subparsers.add_parser("prepare", help="Freeze the 4,000-record sample")
+    prepare = subparsers.add_parser("prepare", help="Freeze a new 5,000-record sample")
     sources = prepare.add_mutually_exclusive_group()
     sources.add_argument("--step2-dir", type=Path, default=DEFAULT_STEP2)
     sources.add_argument("--database", type=Path, action="append")
@@ -38,13 +39,22 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--seed", default=SamplingConfig().seed)
     prepare.add_argument("--rebuild", action="store_true")
 
+    expand = subparsers.add_parser(
+        "expand", help="Preserve the frozen 4,000 records and append 1,000 hard negatives"
+    )
+    expand_sources = expand.add_mutually_exclusive_group()
+    expand_sources.add_argument("--step2-dir", type=Path, default=DEFAULT_STEP2)
+    expand_sources.add_argument("--database", type=Path, action="append")
+    expand.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    expand.add_argument("--seed", default=SamplingConfig().seed)
+
     simulate = subparsers.add_parser("simulate", help="Run provisional local Codex annotations")
     simulate.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     simulate.add_argument("--model", default=os.getenv("CODEX_MODEL", DEFAULT_MODEL))
     simulate.add_argument(
         "--reasoning-effort",
         choices=("low", "medium", "high", "xhigh", "max"),
-        default="high",
+        default="low",
     )
     simulate.add_argument("--batch-size", type=int, default=20)
     simulate.add_argument("--max-attempts", type=int, default=3)
@@ -60,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     finalize.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     finalize.add_argument("--step2-dir", type=Path, default=DEFAULT_STEP2)
     finalize.add_argument("--database", type=Path, action="append")
-    finalize.add_argument("--split-seed", default="step3-human-split-v2.2.0")
+    finalize.add_argument("--split-seed", default="step3-human-split-v2.3.0")
 
     evaluate = subparsers.add_parser(
         "evaluate",
@@ -85,6 +95,21 @@ def main() -> int:
         print(
             json.dumps(
                 {"paths": _paths_json(paths), "manifest": manifest}, ensure_ascii=False, indent=2
+            )
+        )
+        return 0
+    if args.command == "expand":
+        databases = args.database or discover_step2_databases(args.step2_dir)
+        paths, manifest = expand_sample(
+            databases,
+            args.output_dir,
+            config=SamplingConfig(seed=args.seed),
+        )
+        print(
+            json.dumps(
+                {"paths": _paths_json(paths), "manifest": manifest},
+                ensure_ascii=False,
+                indent=2,
             )
         )
         return 0

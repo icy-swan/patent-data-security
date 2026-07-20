@@ -15,7 +15,7 @@ from typing import Any
 
 from pipeline.common.io import atomic_json_write
 from pipeline.step3.client import BatchAnnotationResponse, CodexAnnotationClient
-from pipeline.step3.sampling import Step3Paths, write_simulation_dataset
+from pipeline.step3.sampling import SCHEMA_VERSION, Step3Paths, write_simulation_dataset
 from pipeline.step3.schema import IndependentAnnotation
 
 
@@ -245,7 +245,7 @@ def _progress(
     pending = total - completed
     eta = pending * average if average else None
     return {
-        "schema_version": "2.2.0",
+        "schema_version": SCHEMA_VERSION,
         "database": str(connection.execute("PRAGMA database_list").fetchone()[2]),
         "model": client.model,
         "reasoning_effort": client.reasoning_effort,

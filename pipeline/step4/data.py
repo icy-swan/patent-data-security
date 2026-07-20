@@ -14,15 +14,21 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.common.io import atomic_json_write, sha256_file
+from pipeline.step2.prompt import (
+    PROMPT_VERSION,
+    PromptBundle,
+    build_dynamic_message,
+    load_prompt_bundle,
+)
+from pipeline.step2.schema import PatentClassification
 
-DATASET_VERSION = "data-security-binary-v1.0.0"
-SCHEMA_VERSION = "1.0.0"
-SFT_PROMPT_VERSION = "step4-data-security-binary-v1.0.0"
+DATASET_VERSION = "data-security-binary-v1.1.0"
+SCHEMA_VERSION = "1.1.0"
+SFT_PROMPT_VERSION = PROMPT_VERSION
 LABEL_TO_ID = {"OTHER": 0, "DATA_SECURITY": 1}
 HUMAN_EVALUATION_TO_LABEL = {"false": "OTHER", "true": "DATA_SECURITY"}
 SPLITS = ("train", "validation", "test")
-EXPECTED_SPLIT_COUNTS = {"train": 3_200, "validation": 400, "test": 400}
-DEFAULT_INSTRUCTION_PATH = Path(__file__).resolve().parent / "resources" / "sft_instruction.txt"
+EXPECTED_SPLIT_COUNTS = {"train": 4_000, "validation": 500, "test": 500}
 
 REQUIRED_FIELDS = (
     "sample_id",
@@ -35,8 +41,16 @@ REQUIRED_FIELDS = (
     "ipc",
     "main_ipc",
     "human_evaluation",
+    "confidence",
     "scope_basis",
+    "processing_activities",
     "industry_sectors",
+    "technical_scope",
+    "legal_scope",
+    "evidence",
+    "reason",
+    "review_flag",
+    "review_reason",
 )
 
 CLASSIFIER_FIELDS = (
@@ -109,27 +123,34 @@ def prepare_datasets(
     *,
     rebuild: bool = False,
     expected_counts: Mapping[str, int] = EXPECTED_SPLIT_COUNTS,
-    instruction_path: str | Path = DEFAULT_INSTRUCTION_PATH,
+    prompt_bundle: PromptBundle | None = None,
 ) -> tuple[Step4Paths, dict[str, Any]]:
     """Validate frozen splits and export classifier plus MaaS conversational JSONL."""
 
     step3_root = Path(step3_dir).resolve()
     results_path = step3_root / "result.csv"
+    step3_manifest_path = step3_root / "manifest.json"
     source_paths = {
         split: step3_root / "dataset" / f"{split}.csv" for split in SPLITS
     }
-    missing = [path for path in (results_path, *source_paths.values()) if not path.is_file()]
+    missing = [
+        path
+        for path in (step3_manifest_path, results_path, *source_paths.values())
+        if not path.is_file()
+    ]
     if missing:
         raise FileNotFoundError(f"Missing Step 3 split files: {missing}")
 
-    instruction_file = Path(instruction_path).resolve()
-    if not instruction_file.is_file():
-        raise FileNotFoundError(f"Missing SFT instruction: {instruction_file}")
-    instruction = instruction_file.read_text(encoding="utf-8").strip()
-    if not instruction:
-        raise ValueError("SFT instruction must not be empty")
+    production_prompt = prompt_bundle or load_prompt_bundle()
 
     expected = {split: int(expected_counts[split]) for split in SPLITS}
+    step3_manifest = json.loads(step3_manifest_path.read_text(encoding="utf-8"))
+    _validate_step3_manifest(
+        step3_manifest,
+        results_path=results_path,
+        expected_count=sum(expected.values()),
+        expected_splits=expected,
+    )
     paths = step4_paths(output_dir)
     _prepare_output(paths, rebuild=rebuild)
 
@@ -156,7 +177,10 @@ def prepare_datasets(
     sft_outputs = {"train": paths.sft_train, "validation": paths.sft_validation}
     index_rows: list[dict[str, Any]] = []
     for split, destination in sft_outputs.items():
-        messages = [_sft_row(row, instruction=instruction) for row in rows_by_split[split]]
+        messages = [
+            _sft_row(row, prompt_bundle=production_prompt)
+            for row in rows_by_split[split]
+        ]
         _write_jsonl(destination, messages)
         for line_number, (source, message) in enumerate(
             zip(rows_by_split[split], messages, strict=True), start=1
@@ -188,6 +212,10 @@ def prepare_datasets(
         "schema_version": SCHEMA_VERSION,
         "dataset_version": DATASET_VERSION,
         "source_step3_root": str(step3_root),
+        "source_step3_manifest": {
+            "path": str(step3_manifest_path),
+            "sha256": sha256_file(step3_manifest_path),
+        },
         "source_results": {
             "path": str(results_path),
             "sha256": sha256_file(results_path),
@@ -215,10 +243,15 @@ def prepare_datasets(
             "top_level_fields": ["messages"],
             "splits": ["train", "validation"],
             "test_exported": False,
-            "assistant_target": "label_only",
+            "message_roles": ["system", "user", "assistant"],
+            "system_prompt_source": "step2_production_static_prefix",
+            "user_message_source": "step2_production_dynamic_message",
+            "assistant_target": "step2_compatible_structured_classification",
+            "assistant_target_fields": list(PatentClassification.model_fields),
             "prompt_version": SFT_PROMPT_VERSION,
-            "instruction_path": str(instruction_file),
-            "instruction_sha256": sha256_file(instruction_file),
+            "system_prompt_sha256": production_prompt.prefix_sha256,
+            "schema_sha256": production_prompt.schema_sha256,
+            "resource_hashes": production_prompt.resource_hashes,
         },
         "annotation_provenance": provenance,
         "outputs": {
@@ -257,6 +290,7 @@ def _read_and_validate_split(
             )
         row["human_evaluation"] = evaluation
         row["label"] = HUMAN_EVALUATION_TO_LABEL[evaluation]
+        row["assistant_target"] = _annotation_target(row)
         row["data_split"] = split
         if not row["abstract"].strip():
             raise ValueError(f"Paper-style abstract input is empty for {row['sample_id']}")
@@ -265,6 +299,26 @@ def _read_and_validate_split(
     if set(row["label"] for row in rows) != set(LABEL_TO_ID):
         raise ValueError(f"{split} must contain both labels")
     return rows
+
+
+def _validate_step3_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    results_path: Path,
+    expected_count: int,
+    expected_splits: Mapping[str, int],
+) -> None:
+    if int(manifest.get("target_size", 0)) != expected_count:
+        raise ValueError(
+            "Step 3 manifest target_size does not match the Step 4 dataset contract"
+        )
+    human_results = manifest.get("human_results")
+    if not isinstance(human_results, dict):
+        raise ValueError("Step 3 manifest has no finalized human_results report")
+    if human_results.get("counts") != dict(expected_splits):
+        raise ValueError("Step 3 finalized split counts differ from Step 4 expectations")
+    if human_results.get("source_sha256") != sha256_file(results_path):
+        raise ValueError("Step 3 result.csv changed after finalize")
 
 
 def _read_and_validate_results(path: Path, *, expected_count: int) -> list[dict[str, str]]:
@@ -286,6 +340,8 @@ def _read_and_validate_results(path: Path, *, expected_count: int) -> list[dict[
                 f"Invalid human_evaluation for {row['sample_id']}: {row['human_evaluation']}"
             )
         row["human_evaluation"] = evaluation
+        row["label"] = HUMAN_EVALUATION_TO_LABEL[evaluation]
+        row["assistant_target"] = _annotation_target(row)
     return rows
 
 
@@ -340,19 +396,55 @@ def _classifier_row(row: Mapping[str, str]) -> dict[str, Any]:
     }
 
 
-def _sft_row(row: Mapping[str, str], *, instruction: str) -> dict[str, Any]:
-    patent = {
-        field: row[field] for field in ("title", "abstract", "claim", "ipc", "main_ipc")
-    }
-    user = instruction + "\n\n待判断专利：\n" + json.dumps(
-        patent, ensure_ascii=False, separators=(",", ":")
+def _sft_row(row: Mapping[str, Any], *, prompt_bundle: PromptBundle) -> dict[str, Any]:
+    assistant = json.dumps(
+        row["assistant_target"], ensure_ascii=False, separators=(",", ":")
     )
     return {
         "messages": [
-            {"role": "user", "content": user},
-            {"role": "assistant", "content": row["label"]},
+            {"role": "system", "content": prompt_bundle.static_prefix},
+            {"role": "user", "content": build_dynamic_message(row)},
+            {"role": "assistant", "content": assistant},
         ]
     }
+
+
+def _annotation_target(row: Mapping[str, str]) -> dict[str, Any]:
+    sample_id = row.get("sample_id", "<unknown>")
+    try:
+        annotation = PatentClassification.model_validate(
+            {
+                "label": row["label"],
+                "confidence": float(row["confidence"]),
+                "scope_basis": json.loads(row["scope_basis"]),
+                "processing_activities": json.loads(row["processing_activities"]),
+                "industry_sectors": json.loads(row["industry_sectors"]),
+                "technical_scope": row["technical_scope"],
+                "legal_scope": row["legal_scope"],
+                "evidence": json.loads(row["evidence"]),
+                "reason": row["reason"],
+                "review_flag": _exact_boolean(row["review_flag"]),
+                "review_reason": row["review_reason"],
+            }
+        )
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Invalid structured annotation for {sample_id}: {exc}") from exc
+    for evidence in annotation.evidence:
+        if evidence.quote not in row[evidence.field]:
+            raise ValueError(
+                f"Invalid structured annotation for {sample_id}: "
+                f"evidence is not verbatim in {evidence.field}"
+            )
+    return annotation.model_dump(mode="json")
+
+
+def _exact_boolean(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise ValueError(f"expected true or false, got {value!r}")
 
 
 def _prepare_output(paths: Step4Paths, *, rebuild: bool) -> None:

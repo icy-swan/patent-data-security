@@ -10,6 +10,7 @@ import pytest
 from pipeline.step3.runner import _exclusive_lock, _runner_active
 from pipeline.step3.sampling import (
     RESULT_FIELDS,
+    SamplingConfig,
     _balanced_capacity_allocation,
     _initialize_task_database,
     _sampling_group,
@@ -18,6 +19,13 @@ from pipeline.step3.sampling import (
     finalize_human_results,
     step3_paths,
 )
+
+
+def test_default_sampling_config_expands_only_the_hard_negative_quota() -> None:
+    config = SamplingConfig()
+
+    assert config.target_size == 5_000
+    assert config.group_targets == {"positive": 3_000, "hard_negative": 2_000}
 
 
 def test_sampling_groups_prioritize_positives_and_s_to_other_hard_negatives() -> None:
@@ -153,7 +161,7 @@ def test_finalize_human_results_strips_metadata_and_creates_clean_splits(
     assert result_fields == list(RESULT_FIELDS)
     assert len(results) == 20
     assert {row["human_evaluation"] for row in results} == {"true", "false"}
-    assert report["removed_input_fields"] == ["confidence", "review_flag", "step2_label"]
+    assert report["removed_input_fields"] == ["annotation_model", "step2_label"]
     assert report["counts"] == {"train": 16, "validation": 2, "test": 2}
     for split, path in {
         "train": paths.train,
@@ -211,15 +219,26 @@ def _write_human_result_fixture(
         result = {
             **frozen,
             "human_evaluation": evaluation,
+            "confidence": "0.99",
             "scope_basis": json.dumps(
                 ["cryptography"] if positive else ["other"], ensure_ascii=False
+            ),
+            "processing_activities": json.dumps(
+                ["storage"] if positive else ["other"], ensure_ascii=False
             ),
             "industry_sectors": json.dumps(
                 ["telecommunications"] if positive else ["other"], ensure_ascii=False
             ),
-            "confidence": "0.99",
+            "technical_scope": f"分析主权项{index}披露的技术方案",
+            "legal_scope": "属于数据安全范围" if positive else "未跨过数据安全领域边界",
+            "evidence": json.dumps(
+                [{"field": "claim", "quote": f"主权项{index}"}], ensure_ascii=False
+            ),
+            "reason": "存在实质保护机制" if positive else "只有普通数据处理",
             "review_flag": "false",
+            "review_reason": "",
             "step2_label": "DATA_SECURITY",
+            "annotation_model": "fixture",
         }
         if changed_title and index == 0:
             result["title"] = "被修改的名称"
@@ -232,7 +251,7 @@ def _write_human_result_fixture(
     )
     fields = list(RESULT_FIELDS)
     if extra_fields:
-        fields.extend(("confidence", "review_flag", "step2_label"))
+        fields.extend(("step2_label", "annotation_model"))
     with paths.results.open("w", encoding="utf-8-sig", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()

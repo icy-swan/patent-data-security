@@ -78,8 +78,14 @@ Step 2 按年份隔离产物。例如 2021 年数据写入 `data/step2/2021/`，
 `result.csv`、`manifest.json`、`tasks.sqlite3` 和 `progress.json`。后台运行期间产生的
 `runner.pid`、`runner.log`、锁文件及 SQLite sidecar 会在全部任务成功后删除。
 
-Step 3 冻结 4,000 条样本并完成 3,200/400/400 切分，详细命令见
+Step 3 冻结 5,000 条样本并完成 4,000/500/500 切分，详细命令见
 [pipeline/step3/README.md](pipeline/step3/README.md)。
+
+现有 4,000 条基线可无损扩展，保留全部旧任务并新增 1,000 条难负例：
+
+```bash
+python -m pipeline.step3 expand
+```
 
 人工标注结果固定写入 `data/step3/result.csv`，然后执行：
 
@@ -88,8 +94,9 @@ python -m pipeline.step3 evaluate
 python -m pipeline.step3 finalize
 ```
 
-只有 `result.csv` 的 `human_evaluation=true/false` 会进入 `data/step3/dataset/` 下的训练、
-验证和测试切分；Codex 模拟结果不生成训练数据。`evaluate` 会把 Step 1/2 的混淆矩阵、Accuracy、
+只有完成 5,000 条人工核验、结构化理由与证据校验的 `result.csv` 才会进入
+`data/step3/dataset/` 下的训练、验证和测试切分；Codex 模拟结果不生成训练数据。`evaluate`
+会把 Step 1/2 的混淆矩阵、Accuracy、
 Precision、Recall、Specificity、F1 等样本指标和设计加权指标写入 `manifest.json`；`finalize`
 也会自动刷新这些指标。
 

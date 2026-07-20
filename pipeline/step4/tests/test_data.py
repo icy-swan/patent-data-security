@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
+from pipeline.step2.prompt import build_dynamic_message, load_prompt_bundle
 from pipeline.step4.data import REQUIRED_FIELDS, prepare_datasets
 
 
@@ -28,18 +30,32 @@ def test_prepare_exports_classifier_and_blind_test_free_sft(tmp_path: Path) -> N
     assert len(sft_validation) == 2
     assert all(set(row) == {"messages"} for row in sft_train + sft_validation)
     assert all(
-        [message["role"] for message in row["messages"]] == ["user", "assistant"]
+        [message["role"] for message in row["messages"]]
+        == ["system", "user", "assistant"]
         for row in sft_train + sft_validation
     )
     assert all(
-        row["messages"][-1]["content"] in {"DATA_SECURITY", "OTHER"}
+        json.loads(row["messages"][-1]["content"])["label"]
+        in {"DATA_SECURITY", "OTHER"}
         for row in sft_train + sft_validation
     )
+    assert all(
+        json.loads(row["messages"][-1]["content"])["reason"]
+        for row in sft_train + sft_validation
+    )
+    production_prompt = load_prompt_bundle()
+    first_source = _read_jsonl(paths.classifier_train)[0]
+    assert sft_train[0]["messages"][0]["content"] == production_prompt.static_prefix
+    assert sft_train[0]["messages"][1]["content"] == build_dynamic_message(first_source)
     assert not hasattr(paths, "sft_test")
     assert manifest["classifier"]["training_loss"] == "unweighted_cross_entropy"
     assert manifest["classifier"]["validation_selection_metric"] == "accuracy"
     assert manifest["classifier"]["prediction_rule"] == "softmax_argmax"
     assert manifest["sft"]["test_exported"] is False
+    assert manifest["sft"]["prompt_version"] == "data-security-binary-v2.1.0"
+    assert manifest["sft"]["assistant_target"] == (
+        "step2_compatible_structured_classification"
+    )
     assert manifest["annotation_provenance"]["source"] == "human_results_csv"
     assert manifest["annotation_provenance"]["human_evaluation_counts"] == {
         "false": 10,
@@ -82,12 +98,27 @@ def _write_step3_fixture(root: Path, *, cross_split_text: bool = False) -> Path:
                     "ipc": "G06F21/00",
                     "main_ipc": "G06F21/00",
                     "human_evaluation": "true" if positive else "false",
+                    "confidence": "0.99",
                     "scope_basis": json.dumps(
                         ["cryptography"] if positive else ["other"], ensure_ascii=False
+                    ),
+                    "processing_activities": json.dumps(
+                        ["storage"] if positive else ["other"], ensure_ascii=False
                     ),
                     "industry_sectors": json.dumps(
                         ["telecommunications"] if positive else ["other"], ensure_ascii=False
                     ),
+                    "technical_scope": f"分析专利摘要{text_index}披露的技术方案",
+                    "legal_scope": (
+                        "属于数据安全范围" if positive else "未跨过数据安全领域边界"
+                    ),
+                    "evidence": json.dumps(
+                        [{"field": "abstract", "quote": f"专利摘要{text_index}"}],
+                        ensure_ascii=False,
+                    ),
+                    "reason": "存在实质保护机制" if positive else "只有普通数据处理",
+                    "review_flag": "false",
+                    "review_reason": "",
                 }
                 writer.writerow(row)
                 all_rows.append(row)
@@ -97,6 +128,18 @@ def _write_step3_fixture(root: Path, *, cross_split_text: bool = False) -> Path:
         writer = csv.DictWriter(file, fieldnames=REQUIRED_FIELDS)
         writer.writeheader()
         writer.writerows(all_rows)
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "target_size": 20,
+                "human_results": {
+                    "counts": split_counts,
+                    "source_sha256": hashlib.sha256(results.read_bytes()).hexdigest(),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     return root
 
 

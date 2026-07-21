@@ -37,6 +37,7 @@ OUTPUT_FIELDS = (
     "ipc",
     "main_ipc",
     "route",
+    "step1_label",
     "selected_for_step2",
     "selection_group",
     "selection_probability",
@@ -192,7 +193,7 @@ def run_step1(
             )
             elapsed = time.monotonic() - started
             summary = {
-                "schema_version": "2.0.0",
+                "schema_version": "2.1.0",
                 "step": "step1_keyword_context_routing",
                 "dataset_id": dataset,
                 "input_path": str(source),
@@ -209,6 +210,7 @@ def run_step1(
                     ],
                     "ipc_changes_route": False,
                 },
+                "label_mapping": {"S": "DATA_SECURITY", "E": "OTHER"},
                 "sampling": {
                     "e_sample_rate": e_sample_rate,
                     "e_sample_seed": e_sample_seed,
@@ -426,6 +428,7 @@ def _export_results(
                 "dataset_id": dataset,
                 **row,
                 "association_count": association_count,
+                "step1_label": "DATA_SECURITY" if route == "S" else "OTHER",
                 "selected_for_step2": str(selected).lower(),
                 "selection_group": selection_group,
                 "selection_probability": f"{probability:.12g}",

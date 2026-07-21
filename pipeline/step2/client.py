@@ -240,7 +240,11 @@ def _normalize_contract(
                 normalized[field_name] = [item for item in field_value if item != "other"]
                 events.append(f"drop_other:{field_name}")
 
-    if normalized.get("review_flag") is False and normalized.get("review_reason"):
+    if "review_flag" in normalized and "needs_review" not in normalized:
+        normalized["needs_review"] = normalized.pop("review_flag")
+        events.append("migrate_legacy_review_flag")
+
+    if normalized.get("needs_review") is False and normalized.get("review_reason"):
         normalized["review_reason"] = ""
         events.append("clear_review_reason")
 

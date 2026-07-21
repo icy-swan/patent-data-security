@@ -18,7 +18,7 @@ from pipeline.step3.sampling import (
     LABELS,
     SCHEMA_VERSION,
     Step3Paths,
-    _parse_human_evaluation,
+    _parse_review_label,
     _validate_human_result_identity,
 )
 
@@ -52,6 +52,17 @@ def evaluate_pipeline_results(
                 "Step 3 result has no matching succeeded Step 2 task: "
                 f"dataset_id={key[0]} patent_id={key[1]}"
             )
+        expected_step1_label = "DATA_SECURITY" if step2["route"] == "S" else "OTHER"
+        if reference["step1_label"] != expected_step1_label:
+            raise ValueError(
+                "Step 3 result changed step1_label: "
+                f"dataset_id={key[0]} patent_id={key[1]}"
+            )
+        if reference["step2_label"] != step2["label"]:
+            raise ValueError(
+                "Step 3 result changed step2_label: "
+                f"dataset_id={key[0]} patent_id={key[1]}"
+            )
         sampling_group = _sampling_group(step2["route"], step2["label"])
         stratum_key = (reference["application_year"], sampling_group)
         stratum = strata.get(stratum_key)
@@ -61,8 +72,11 @@ def evaluate_pipeline_results(
         joined.append(
             {
                 **reference,
-                "step1_prediction": step2["route"] == "S",
-                "step2_prediction": step2["label"] == "DATA_SECURITY",
+                "reference_positive": (
+                    reference["human_review_label"] == "DATA_SECURITY"
+                ),
+                "step1_prediction": reference["step1_label"] == "DATA_SECURITY",
+                "step2_prediction": reference["step2_label"] == "DATA_SECURITY",
                 "design_weight": stratum["population"] / stratum["sample"],
             }
         )
@@ -76,6 +90,13 @@ def evaluate_pipeline_results(
 
     sample_label_counts = Counter(
         "DATA_SECURITY" if row["reference_positive"] else "OTHER" for row in joined
+    )
+    agreement_counts = Counter(
+        "agreement"
+        if row["human_review_label"]
+        == ("DATA_SECURITY" if row["step2_prediction"] else "OTHER")
+        else "disagreement"
+        for row in joined
     )
     weighted_total = sum(float(row["design_weight"]) for row in joined)
     eligible_population = sum(value["population"] for value in strata.values())
@@ -93,6 +114,9 @@ def evaluate_pipeline_results(
             "sha256": sha256_file(paths.results),
             "records": len(joined),
             "label_counts": dict(sorted(sample_label_counts.items())),
+            "gold_label_field": "human_review_label",
+            "allowed_labels": list(LABELS),
+            "step2_agreement_counts": dict(sorted(agreement_counts.items())),
             "provenance": manifest.get(
                 "result_preparation",
                 {"status": "human_results_csv_provenance_not_recorded"},
@@ -175,7 +199,12 @@ def _read_reference_results(
 ) -> list[dict[str, Any]]:
     if not paths.results.is_file():
         raise FileNotFoundError(f"Missing Step 3 result: {paths.results}")
-    required = {*FROZEN_RESULT_FIELDS, "human_evaluation"}
+    required = {
+        *FROZEN_RESULT_FIELDS,
+        "step1_label",
+        "step2_label",
+        "human_review_label",
+    }
     with paths.results.open(encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
         missing = sorted(required - set(reader.fieldnames or ()))
@@ -190,13 +219,27 @@ def _read_reference_results(
     references: list[dict[str, Any]] = []
     identity_rows: list[dict[str, Any]] = []
     for row_number, row in enumerate(raw_rows, start=2):
-        evaluation = _parse_human_evaluation(
-            row["human_evaluation"],
+        review_label = _parse_review_label(
+            row["human_review_label"],
+            field="human_review_label",
             row_number=row_number,
+        )
+        step1_label = _parse_review_label(
+            row["step1_label"], field="step1_label", row_number=row_number
+        )
+        step2_label = _parse_review_label(
+            row["step2_label"], field="step2_label", row_number=row_number
         )
         identity = {field: str(row.get(field, "") or "") for field in FROZEN_RESULT_FIELDS}
         identity_rows.append(identity)
-        references.append({**identity, "reference_positive": evaluation})
+        references.append(
+            {
+                **identity,
+                "step1_label": step1_label,
+                "step2_label": step2_label,
+                "human_review_label": review_label,
+            }
+        )
     _validate_human_result_identity(
         paths.database,
         identity_rows,

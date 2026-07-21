@@ -85,7 +85,7 @@ def test_runner_writes_model_result_under_local_patent_id_and_resumes(tmp_path: 
                 legal_scope="存在密码技术。" if label == "DATA_SECURITY" else "未建立安全联系。",
                 evidence=[{"field": "claim", "quote": patent["claim"]}],
                 reason="测试结果",
-                review_flag=False,
+                needs_review=False,
                 review_reason="",
             )
             return ClassificationResponse(
@@ -122,8 +122,8 @@ def test_runner_writes_model_result_under_local_patent_id_and_resumes(tmp_path: 
 
     with paths.results.open(encoding="utf-8") as file:
         rows = {row["patent_id"]: row for row in csv.DictReader(file)}
-    assert rows["CN-A"]["label"] == "DATA_SECURITY"
-    assert rows["CN-B"]["label"] == "OTHER"
+    assert rows["CN-A"]["step2_label"] == "DATA_SECURITY"
+    assert rows["CN-B"]["step2_label"] == "OTHER"
     assert json.loads(rows["CN-A"]["processing_activities"]) == ["transmission"]
     assert json.loads(rows["CN-A"]["industry_sectors"]) == ["telecommunications"]
     assert json.loads(rows["CN-B"]["processing_activities"]) == ["other"]

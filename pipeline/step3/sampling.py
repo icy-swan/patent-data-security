@@ -25,8 +25,8 @@ from pipeline.step2.schema import (
     ScopeBasis,
 )
 
-SAMPLING_VERSION = "step3-positive-priority-hard-negative-v2.3.0"
-SCHEMA_VERSION = "2.3.0"
+SAMPLING_VERSION = "step3-positive-priority-hard-negative-v2.4.0"
+SCHEMA_VERSION = "2.4.0"
 # Keep the v2.2.0 seed so the original 4,000 records remain a strict subset
 # of the expanded 5,000-record sample. This preserves completed review work.
 COMPATIBLE_SAMPLE_SEED = "step3-positive-priority-hard-negative-v2.2.0"
@@ -55,7 +55,7 @@ SIMULATION_FIELDS = (
     "legal_scope",
     "evidence",
     "reason",
-    "review_flag",
+    "needs_review",
     "review_reason",
     "annotation_source",
     "annotation_model",
@@ -76,23 +76,9 @@ FROZEN_RESULT_FIELDS = (
     "main_ipc",
 )
 
-RESULT_FIELDS = (
-    *FROZEN_RESULT_FIELDS,
-    "human_evaluation",
-    "confidence",
-    "scope_basis",
-    "processing_activities",
-    "industry_sectors",
-    "technical_scope",
-    "legal_scope",
-    "evidence",
-    "reason",
-    "review_flag",
-    "review_reason",
-)
-
 MANUAL_REVIEW_FIELDS = (
     *FROZEN_RESULT_FIELDS,
+    "step1_label",
     "step2_label",
     "step2_confidence",
     "step2_scope_basis",
@@ -102,11 +88,15 @@ MANUAL_REVIEW_FIELDS = (
     "step2_legal_scope",
     "step2_evidence",
     "step2_reason",
-    "step2_review_flag",
+    "step2_needs_review",
     "step2_review_reason",
-    "human_evaluation",
+    "human_review_label",
     "human_reason",
 )
+
+# The completed human-review file preserves the full label lineage and all
+# Step 2 evidence shown to the reviewer. Only human_review_label is Gold.
+RESULT_FIELDS = MANUAL_REVIEW_FIELDS
 
 
 @dataclass(frozen=True)
@@ -300,8 +290,8 @@ def prepare_sample(
         },
         "human_results_policy": {
             "path": str(paths.results),
-            "label_field": "human_evaluation",
-            "allowed_values": ["true", "false"],
+            "label_field": "human_review_label",
+            "allowed_values": list(LABELS),
             "result_fields": list(RESULT_FIELDS),
         },
         "manual_review_policy": {
@@ -310,7 +300,7 @@ def prepare_sample(
             "records": config.target_size,
             "fields": list(MANUAL_REVIEW_FIELDS),
             "step2_decision_visible": True,
-            "human_fields_initially_blank": ["human_evaluation", "human_reason"],
+            "human_fields_initially_blank": ["human_review_label", "human_reason"],
         },
         "finalize_outputs": {
             "result": str(paths.results),
@@ -592,7 +582,7 @@ def finalize_human_results(
     split_seed: str = "step3-human-split-v2.3.0",
     expected_count: int = 5_000,
 ) -> dict[str, Any]:
-    """Validate and sanitize human result.csv, then create minimal 8:1:1 splits."""
+    """Validate explicit human Gold labels and create exact 8:1:1 splits."""
 
     if not paths.results.is_file():
         raise FileNotFoundError(f"Missing human annotation file: {paths.results}")
@@ -610,56 +600,35 @@ def finalize_human_results(
 
     normalized: list[dict[str, Any]] = []
     for row_number, row in enumerate(raw_rows, start=2):
-        evaluation = _parse_human_evaluation(row["human_evaluation"], row_number=row_number)
-        annotation = PatentClassification.model_validate(
-            {
-                "label": "DATA_SECURITY" if evaluation else "OTHER",
-                "confidence": _parse_confidence(row["confidence"], row_number=row_number),
-                "scope_basis": _parse_controlled_list(
-                    row["scope_basis"],
-                    field="scope_basis",
-                    allowed=set(get_args(ScopeBasis)),
-                    maximum=3,
-                    row_number=row_number,
-                ),
-                "processing_activities": _parse_controlled_list(
-                    row["processing_activities"],
-                    field="processing_activities",
-                    allowed=set(get_args(ProcessingActivity)),
-                    maximum=8,
-                    row_number=row_number,
-                ),
-                "industry_sectors": _parse_controlled_list(
-                    row["industry_sectors"],
-                    field="industry_sectors",
-                    allowed=set(get_args(IndustrySector)),
-                    maximum=9,
-                    row_number=row_number,
-                ),
-                "technical_scope": str(row["technical_scope"] or "").strip(),
-                "legal_scope": str(row["legal_scope"] or "").strip(),
-                "evidence": _parse_json_value(
-                    row["evidence"], field="evidence", row_number=row_number
-                ),
-                "reason": str(row["reason"] or "").strip(),
-                "review_flag": _parse_boolean(
-                    row["review_flag"], field="review_flag", row_number=row_number
-                ),
-                "review_reason": str(row["review_reason"] or "").strip(),
-            }
+        step1_label = _parse_review_label(
+            row["step1_label"], field="step1_label", row_number=row_number
         )
-        item = {field: str(row.get(field, "") or "") for field in FROZEN_RESULT_FIELDS}
+        step2_label = _parse_review_label(
+            row["step2_label"], field="step2_label", row_number=row_number
+        )
+        human_review_label = _parse_review_label(
+            row["human_review_label"], field="human_review_label", row_number=row_number
+        )
+        human_reason = str(row["human_reason"] or "").strip()
+        if not human_reason:
+            raise ValueError(f"Row {row_number}: human_reason is required")
+        item = {field: str(row.get(field, "") or "") for field in RESULT_FIELDS}
         item.update(
             {
-                "human_evaluation": evaluation,
-                **annotation.model_dump(),
+                "step1_label": step1_label,
+                "step2_label": step2_label,
+                "step2_needs_review": str(
+                    _parse_boolean(
+                        row["step2_needs_review"],
+                        field="step2_needs_review",
+                        row_number=row_number,
+                    )
+                ).lower(),
+                "human_review_label": human_review_label,
+                "human_reason": human_reason,
+                "label": human_review_label,
             }
         )
-        for evidence in annotation.evidence:
-            if evidence.quote not in item[evidence.field]:
-                raise ValueError(
-                    f"Row {row_number}: evidence quote is not verbatim in {evidence.field}"
-                )
         normalized.append(item)
 
     _validate_human_result_identity(paths.database, normalized, expected_count=expected_count)
@@ -687,13 +656,9 @@ def finalize_human_results(
             "split_seed": split_seed,
             "result_fields": list(RESULT_FIELDS),
             "removed_input_fields": sorted(set(input_fields) - set(RESULT_FIELDS)),
-            "human_evaluation_mapping": {"true": "DATA_SECURITY", "false": "OTHER"},
-            "human_evaluation_counts": dict(
-                sorted(
-                    Counter(
-                        "true" if row["human_evaluation"] else "false" for row in assigned
-                    ).items()
-                )
+            "gold_label_field": "human_review_label",
+            "human_review_label_counts": dict(
+                sorted(Counter(row["human_review_label"] for row in assigned).items())
             ),
             "written_at": _now(),
         }
@@ -751,6 +716,7 @@ def _load_population(
                 "patent_id": patent_id,
                 "source_row_number": row["source_row_number"],
                 "step2_route": row["route"],
+                "step1_label": "DATA_SECURITY" if row["route"] == "S" else "OTHER",
                 "step2_selection_group": row["selection_group"],
                 "step2_selection_probability": float(row["selection_probability"]),
                 "step2_sample_weight": float(row["sample_weight"]),
@@ -764,7 +730,7 @@ def _load_population(
                 "step2_legal_scope": result.legal_scope,
                 "step2_evidence": [item.model_dump() for item in result.evidence],
                 "step2_reason": result.reason,
-                "step2_review_flag": result.review_flag,
+                "step2_needs_review": result.needs_review,
                 "step2_review_reason": result.review_reason,
                 "step2_requested_model": row["requested_model"] or "",
                 "step2_actual_model": row["actual_model"] or "",
@@ -983,11 +949,11 @@ def _manual_review_row(row: Mapping[str, Any]) -> dict[str, Any]:
             json.dumps(row.get(field, []), ensure_ascii=False)
             if field in json_fields
             else "true"
-            if field == "step2_review_flag" and bool(row.get(field))
+            if field == "step2_needs_review" and bool(row.get(field))
             else "false"
-            if field == "step2_review_flag"
+            if field == "step2_needs_review"
             else ""
-            if field in {"human_evaluation", "human_reason"}
+            if field in {"human_review_label", "human_reason"}
             else row.get(field, "")
         )
         for field in MANUAL_REVIEW_FIELDS
@@ -995,38 +961,15 @@ def _manual_review_row(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _result_row(row: Mapping[str, Any]) -> dict[str, Any]:
-    json_fields = {
-        "scope_basis",
-        "processing_activities",
-        "industry_sectors",
-        "evidence",
-    }
-    return {
-        field: (
-            "true"
-            if field == "human_evaluation" and bool(row.get(field))
-            else "false"
-            if field == "human_evaluation"
-            else "true"
-            if field == "review_flag" and bool(row.get(field))
-            else "false"
-            if field == "review_flag"
-            else json.dumps(row.get(field, []), ensure_ascii=False)
-            if field in json_fields
-            else row.get(field, "")
-        )
-        for field in RESULT_FIELDS
-    }
+    return {field: row.get(field, "") for field in RESULT_FIELDS}
 
 
-def _parse_human_evaluation(value: Any, *, row_number: int) -> bool:
-    normalized = str(value or "").strip().lower()
-    if normalized == "true":
-        return True
-    if normalized == "false":
-        return False
+def _parse_review_label(value: Any, *, field: str, row_number: int) -> str:
+    normalized = str(value or "").strip().upper()
+    if normalized in LABELS:
+        return normalized
     raise ValueError(
-        f"Row {row_number}: human_evaluation must be exactly true or false, got {value!r}"
+        f"Row {row_number}: {field} must be DATA_SECURITY or OTHER, got {value!r}"
     )
 
 

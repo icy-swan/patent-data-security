@@ -57,7 +57,7 @@ class PatentEvidence(BaseModel):
 
 
 class PatentClassification(BaseModel):
-    """Binary decision, two downstream analysis dimensions and a review flag."""
+    """Binary decision, two downstream dimensions and an uncertainty marker."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -70,8 +70,21 @@ class PatentClassification(BaseModel):
     legal_scope: str = Field(min_length=1, max_length=800)
     evidence: list[PatentEvidence] = Field(min_length=1, max_length=3)
     reason: str = Field(min_length=1, max_length=1000)
-    review_flag: bool
+    needs_review: bool
     review_reason: str = Field(max_length=500)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_review_flag(cls, value: object) -> object:
+        """Read historical stored responses without exposing review_flag again."""
+
+        if isinstance(value, dict) and "review_flag" in value:
+            migrated = dict(value)
+            if "needs_review" in migrated:
+                raise ValueError("Use needs_review only; review_flag is a legacy field")
+            migrated["needs_review"] = migrated.pop("review_flag")
+            return migrated
+        return value
 
     @model_validator(mode="after")
     def validate_label_contract(self) -> PatentClassification:
@@ -92,8 +105,8 @@ class PatentClassification(BaseModel):
             raise ValueError("OTHER requires processing_activities=['other']")
         if self.label == "OTHER" and self.industry_sectors != ["other"]:
             raise ValueError("OTHER requires industry_sectors=['other']")
-        if self.review_flag and not self.review_reason.strip():
-            raise ValueError("review_reason is required when review_flag=true")
-        if not self.review_flag and self.review_reason.strip():
-            raise ValueError("review_reason must be empty when review_flag=false")
+        if self.needs_review and not self.review_reason.strip():
+            raise ValueError("review_reason is required when needs_review=true")
+        if not self.needs_review and self.review_reason.strip():
+            raise ValueError("review_reason must be empty when needs_review=false")
         return self

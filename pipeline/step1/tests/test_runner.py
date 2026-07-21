@@ -35,9 +35,11 @@ def test_step1_streams_deduplicates_routes_and_samples(tmp_path: Path) -> None:
     assert len(rows) == 3
     by_title = {row["title"]: row for row in rows}
     assert by_title["加密方法"]["route"] == "S"
+    assert by_title["加密方法"]["step1_label"] == "DATA_SECURITY"
     assert by_title["加密方法"]["association_count"] == "2"
     assert by_title["加密方法"]["source_row_number"] == "3"
     assert by_title["食品安全检测"]["route"] == "E"
+    assert by_title["食品安全检测"]["step1_label"] == "OTHER"
     assert by_title["食品安全检测"]["selection_group"] == "E_random"
     assert json.loads(by_title["食品安全检测"]["ipc_audit_hits"])[0]["rule_id"] == (
         "IPC-AUDIT-G06F21"

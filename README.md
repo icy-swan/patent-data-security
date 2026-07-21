@@ -81,8 +81,9 @@ Step 2 按年份隔离产物。例如 2021 年数据写入 `data/step2/2021/`，
 Step 3 冻结 5,000 条样本并完成 4,000/500/500 切分，详细命令见
 [pipeline/step3/README.md](pipeline/step3/README.md)。
 
-人工复核输入固定为 `data/step3/need_manual_review.csv`，其中包含 Step 2 标签、逐字证据和
-大模型决策理由，人工填写 `human_evaluation` 与 `human_reason`。
+人工复核输入固定为 `data/step3/need_manual_review.csv`，其中包含 `step1_label`、
+`step2_label`、逐字证据和大模型决策理由，人工填写 `human_review_label` 与
+`human_reason`。三个标签字段都只使用 `DATA_SECURITY/OTHER`，不再通过布尔值推导类别。
 
 人工标注结果固定写入 `data/step3/result.csv`，然后执行：
 

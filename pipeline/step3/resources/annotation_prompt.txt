@@ -19,8 +19,9 @@
 - OTHER：只有普通的数据采集、存储、分析、传输或展示；“安全”指人身、设备、生产、
   电气、驾驶、食品等非数据安全；相关词仅在背景、效果口号或可选组件清单中出现；
   或必须依靠推测才能建立数据安全联系。
-- review_flag 不是第三类。材料缺失、主权项截断、正负证据冲突或边界无法稳定判断时，
-  仍须二选一，并把 review_flag 设为 true，具体说明不确定来源。
+- needs_review 仅表示材料缺失、主权项截断、证据冲突或边界无法稳定判断，不承载类别结论。
+  仍须在 label 中明确选择 DATA_SECURITY 或 OTHER；需要额外复核时把 needs_review 设为 true，
+  并在 review_reason 中具体说明不确定来源。
 
 附加维度：
 1. scope_basis 只选择专利证据支持的数据安全范围；OTHER 固定为 ["other"]。
@@ -29,6 +30,6 @@
 3. industry_sectors 只依据专利文本标注工业、电信、交通、金融、自然资源、卫生健康、
    教育或科技；不得仅凭申请人、IPC 或常识猜测。通用技术与 OTHER 均使用 ["other"]。
 4. technical_scope 概括实际技术，legal_scope 说明为什么跨过或未跨过数据安全领域边界。
-5. confidence 是对当前二分类判断的自评，不得把 review_flag 当作第三类概率。
+5. confidence 是对当前二分类判断的自评，不得把 needs_review 当作第三类概率。
 
 只返回满足给定结构化 Schema 的结果，不返回 Markdown 或额外说明。

@@ -14,7 +14,7 @@ from pipeline.common.io import sha256_file
 from pipeline.step1.taxonomy import KeywordBundle, load_keyword_bundle
 from pipeline.step2.schema import IndustrySector, PatentClassification, ProcessingActivity
 
-PROMPT_VERSION = "data-security-binary-v2.1.0"
+PROMPT_VERSION = "data-security-binary-v2.2.0"
 DEFAULT_RESOURCE_DIR = Path(__file__).resolve().parent / "resources"
 DYNAMIC_FIELDS = ("patent_id", "title", "abstract", "claim", "ipc", "main_ipc")
 ROUTING_FIELDS = {
@@ -174,8 +174,9 @@ def _build_static_prefix(
   该技术可以是更大系统中的实质组成部分，不要求成为唯一或最中心的改进。
 - OTHER：只有普通数据处理、非数据安全语义、背景提及、清单式可选组件，或者必须依靠
   模型补全才能建立数据安全联系。
-- review_flag 不是第三类。材料缺失、主权项截断、正负证据冲突或边界无法稳定判断时，
-  仍须二选一，并设置 review_flag=true 说明问题。
+- needs_review 只表示材料缺失、主权项截断、证据冲突或边界不稳定，不承载类别结论。
+  模型仍须在 label 中明确输出 DATA_SECURITY 或 OTHER；需要额外复核时设置 needs_review=true
+  并在 review_reason 说明问题。
 
 <DATA_SECURITY_LAW>
 {law_text.rstrip()}

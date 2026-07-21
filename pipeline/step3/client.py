@@ -211,6 +211,8 @@ def _normalized_batch(raw_response: str) -> dict[str, Any]:
                 field_value = annotation.get(field)
                 if isinstance(field_value, list) and len(field_value) > 1:
                     annotation[field] = [item for item in field_value if item != "other"]
-        if annotation.get("review_flag") is False and annotation.get("review_reason"):
+        if "review_flag" in annotation and "needs_review" not in annotation:
+            annotation["needs_review"] = annotation.pop("review_flag")
+        if annotation.get("needs_review") is False and annotation.get("review_reason"):
             annotation["review_reason"] = ""
     return value

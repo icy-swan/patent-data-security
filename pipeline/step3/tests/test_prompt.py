@@ -34,6 +34,6 @@ def test_dynamic_message_contains_patent_only_and_no_step2_decision() -> None:
 def test_prompt_and_schema_have_frozen_hashes() -> None:
     prompt = load_annotation_prompt()
 
-    assert prompt.version == "step3-independent-binary-v2.2.0"
+    assert prompt.version == "step3-independent-binary-v2.3.0"
     assert len(prompt.prompt_sha256) == 64
     assert len(prompt.schema_sha256) == 64

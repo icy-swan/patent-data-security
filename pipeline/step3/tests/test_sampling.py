@@ -41,6 +41,7 @@ def test_manual_review_row_exposes_step2_reason_and_blanks_human_fields() -> Non
         "claim": "权利要求",
         "ipc": "G06F21/00",
         "main_ipc": "G06F21/00",
+        "step1_label": "DATA_SECURITY",
         "step2_label": "OTHER",
         "step2_confidence": 0.9,
         "step2_scope_basis": ["other"],
@@ -50,7 +51,7 @@ def test_manual_review_row_exposes_step2_reason_and_blanks_human_fields() -> Non
         "step2_legal_scope": "未跨过数据安全边界",
         "step2_evidence": [{"field": "abstract", "quote": "摘要"}],
         "step2_reason": "没有实质安全机制",
-        "step2_review_flag": False,
+        "step2_needs_review": False,
         "step2_review_reason": "",
     }
 
@@ -59,7 +60,7 @@ def test_manual_review_row_exposes_step2_reason_and_blanks_human_fields() -> Non
     assert tuple(review) == MANUAL_REVIEW_FIELDS
     assert review["step2_reason"] == "没有实质安全机制"
     assert json.loads(review["step2_evidence"])[0]["quote"] == "摘要"
-    assert review["human_evaluation"] == ""
+    assert review["human_review_label"] == ""
     assert review["human_reason"] == ""
 
 
@@ -195,8 +196,11 @@ def test_finalize_human_results_strips_metadata_and_creates_clean_splits(
     result_fields, results = _read_csv(paths.results)
     assert result_fields == list(RESULT_FIELDS)
     assert len(results) == 20
-    assert {row["human_evaluation"] for row in results} == {"true", "false"}
-    assert report["removed_input_fields"] == ["annotation_model", "step2_label"]
+    assert {row["human_review_label"] for row in results} == {
+        "DATA_SECURITY",
+        "OTHER",
+    }
+    assert report["removed_input_fields"] == ["annotation_model"]
     assert report["counts"] == {"train": 16, "validation": 2, "test": 2}
     for split, path in {
         "train": paths.train,
@@ -211,11 +215,11 @@ def test_finalize_human_results_strips_metadata_and_creates_clean_splits(
         assert "annotation_model" not in fields
 
 
-def test_finalize_human_results_rejects_non_boolean_human_label(tmp_path: Path) -> None:
+def test_finalize_human_results_rejects_invalid_human_review_label(tmp_path: Path) -> None:
     paths = step3_paths(tmp_path / "step3")
-    _write_human_result_fixture(paths, first_evaluation="yes")
+    _write_human_result_fixture(paths, first_review_label="yes")
 
-    with pytest.raises(ValueError, match="must be exactly true or false"):
+    with pytest.raises(ValueError, match="must be DATA_SECURITY or OTHER"):
         finalize_human_results(paths, expected_count=20)
 
 
@@ -231,7 +235,7 @@ def _write_human_result_fixture(
     paths,
     *,
     extra_fields: bool = False,
-    first_evaluation: str = "true",
+    first_review_label: str = "DATA_SECURITY",
     changed_title: bool = False,
 ) -> None:
     paths.results.parent.mkdir(parents=True, exist_ok=True)
@@ -249,30 +253,33 @@ def _write_human_result_fixture(
             "ipc": "G06F21/00",
             "main_ipc": "G06F21/00",
         }
-        evaluation = first_evaluation if index == 0 else "true" if index % 2 == 0 else "false"
-        positive = evaluation.lower() == "true"
+        review_label = (
+            first_review_label
+            if index == 0
+            else "DATA_SECURITY"
+            if index % 2 == 0
+            else "OTHER"
+        )
         result = {
             **frozen,
-            "human_evaluation": evaluation,
-            "confidence": "0.99",
-            "scope_basis": json.dumps(
-                ["cryptography"] if positive else ["other"], ensure_ascii=False
+            "step1_label": "DATA_SECURITY",
+            "step2_label": "DATA_SECURITY" if index % 3 else "OTHER",
+            "step2_confidence": "0.99",
+            "step2_scope_basis": json.dumps(["cryptography"], ensure_ascii=False),
+            "step2_processing_activities": json.dumps(["storage"], ensure_ascii=False),
+            "step2_industry_sectors": json.dumps(
+                ["telecommunications"], ensure_ascii=False
             ),
-            "processing_activities": json.dumps(
-                ["storage"] if positive else ["other"], ensure_ascii=False
-            ),
-            "industry_sectors": json.dumps(
-                ["telecommunications"] if positive else ["other"], ensure_ascii=False
-            ),
-            "technical_scope": f"分析主权项{index}披露的技术方案",
-            "legal_scope": "属于数据安全范围" if positive else "未跨过数据安全领域边界",
-            "evidence": json.dumps(
+            "step2_technical_scope": f"分析主权项{index}披露的技术方案",
+            "step2_legal_scope": "模型领域判断",
+            "step2_evidence": json.dumps(
                 [{"field": "claim", "quote": f"主权项{index}"}], ensure_ascii=False
             ),
-            "reason": "存在实质保护机制" if positive else "只有普通数据处理",
-            "review_flag": "false",
-            "review_reason": "",
-            "step2_label": "DATA_SECURITY",
+            "step2_reason": "模型判断理由",
+            "step2_needs_review": "false",
+            "step2_review_reason": "",
+            "human_review_label": review_label,
+            "human_reason": "人工复核理由",
             "annotation_model": "fixture",
         }
         if changed_title and index == 0:
@@ -286,7 +293,7 @@ def _write_human_result_fixture(
     )
     fields = list(RESULT_FIELDS)
     if extra_fields:
-        fields.extend(("step2_label", "annotation_model"))
+        fields.append("annotation_model")
     with paths.results.open("w", encoding="utf-8-sig", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()

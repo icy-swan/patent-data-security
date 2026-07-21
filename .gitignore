@@ -15,4 +15,7 @@ data/step4/*
 !data/step4/.gitkeep
 *.partial
 *.partial.sqlite3
-tools
+tools/*
+!tools/README.md
+!tools/codex_review_2021.py
+!tools/migrate_review_labels.py

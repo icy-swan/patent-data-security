@@ -24,7 +24,7 @@ def valid_result() -> dict:
         "legal_scope": "该机制使传输数据处于有效保护状态。",
         "evidence": [{"field": "claim", "quote": "通过密钥协商加密传输数据"}],
         "reason": "密码协议属于数据安全基础技术。",
-        "review_flag": False,
+        "needs_review": False,
         "review_reason": "",
     }
 
@@ -158,7 +158,7 @@ def test_client_repairs_json_and_normalizes_only_schema_contracts() -> None:
     assert "other_contract:scope_basis" in result.normalization_events
 
 
-def test_client_clears_review_reason_when_review_is_false() -> None:
+def test_client_clears_review_reason_when_review_is_not_needed() -> None:
     value = valid_result()
     value["review_reason"] = "无需复核"
     response = SimpleNamespace(

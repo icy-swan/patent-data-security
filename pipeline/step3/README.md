@@ -12,8 +12,9 @@ python -m pipeline.step3 prepare
 
 抽样完成后的正式目录只有三项：`manifest.json`、`tasks.sqlite3` 和
 `need_manual_review.csv`。人工复核 CSV 覆盖全部 5,000 条，展示 Step 2 的标签、置信度、
-受控维度、技术/法律范围、逐字证据、`step2_reason` 和复核标记；人工填写最后两列
-`human_evaluation` 与 `human_reason`。这轮属于对 Step 2 结论的人工复核，不是盲标。
+受控维度、技术/法律范围、逐字证据、`step2_reason` 和不确定性提示；人工填写最后两列
+`human_review_label` 与 `human_reason`。人工标签只能是 `DATA_SECURITY` 或 `OTHER`。这轮属于
+对 Step 2 结论的人工复核，不是盲标。
 
 开发期使用本机已经登录的 Codex 独立模拟标注，不读取 `OPENAI_API_KEY`：
 
@@ -38,20 +39,23 @@ python -m pipeline.step3 simulate \
 
 ```text
 sample_id,dataset_id,application_year,patent_id,title,abstract,claim,ipc,main_ipc,
-human_evaluation,confidence,scope_basis,processing_activities,industry_sectors,technical_scope,legal_scope,
-evidence,reason,review_flag,review_reason
+step1_label,step2_label,step2_confidence,step2_scope_basis,step2_processing_activities,
+step2_industry_sectors,step2_technical_scope,step2_legal_scope,step2_evidence,step2_reason,
+step2_needs_review,step2_review_reason,human_review_label,human_reason
 ```
 
-`human_evaluation` 只能是 `true` 或 `false`，分别表示数据安全正类和负类；
-`scope_basis`、`processing_activities`、`industry_sectors` 和 `evidence` 使用 JSON。理由和证据
-必须与人工最终标签一致。可先计算 Step 1/2 评估指标：
+`step1_label`、`step2_label` 和 `human_review_label` 只能是 `DATA_SECURITY` 或 `OTHER`；
+`step2_scope_basis`、`step2_processing_activities`、`step2_industry_sectors` 和 `step2_evidence`
+使用 JSON。`step2_needs_review` 只表示模型输出是否存在不确定性，不承载类别结论。可先计算
+Step 1/2 评估指标：
 
 ```bash
 python -m pipeline.step3 evaluate
 ```
 
-`evaluate` 以 `DATA_SECURITY` 为正类，Step 1 将 `S` 视为正预测、`E` 视为负预测，Step 2 直接
-使用其二分类标签。报告写入根目录 `manifest.json` 的 `evaluation`，包含混淆矩阵、Accuracy、
+`evaluate` 直接以 `human_review_label` 为金标准，不再解释或翻转布尔值；以
+`DATA_SECURITY` 为正类，将 Step 1 的 `step1_label` 和 Step 2 的 `step2_label` 分别与金标准比较。
+报告写入根目录 `manifest.json` 的 `evaluation`，包含混淆矩阵、Accuracy、
 Precision、Recall/Sensitivity、Specificity、NPV、F1、Balanced Accuracy、MCC、Cohen's Kappa
 及未加权 Accuracy 的 Wilson 95% 区间。
 

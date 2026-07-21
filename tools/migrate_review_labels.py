@@ -18,7 +18,12 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.common.io import atomic_json_write, sha256_file
-from pipeline.step3.sampling import LABELS, MANUAL_REVIEW_FIELDS, SCHEMA_VERSION
+from pipeline.step3.sampling import (
+    LABELS,
+    MANUAL_REVIEW_FIELDS,
+    POSITIVE_COHORT,
+    SCHEMA_VERSION,
+)
 
 
 def migrate(root: Path) -> dict[str, Any]:
@@ -43,12 +48,25 @@ def migrate(root: Path) -> dict[str, Any]:
     step3_root = root / "data" / "step3"
     migrated_step3: list[str] = []
     source_hashes: dict[str, str] = {}
-    for name in ("need_manual_review.csv", "result.csv", "codex_result.csv"):
-        path = step3_root / name
+    step3_renames = {
+        "need_manual_review.csv": "need_manual_review_positive.csv",
+        "result.csv": "result_positive.csv",
+        "codex_result.csv": "codex_result_positive.csv",
+    }
+    for old_name, new_name in step3_renames.items():
+        old_path = step3_root / old_name
+        new_path = step3_root / new_name
+        if old_path.is_file() and new_path.exists():
+            raise FileExistsError(
+                f"Both legacy and canonical Step 3 files exist: {old_path}, {new_path}"
+            )
+        path = old_path if old_path.is_file() else new_path
         if path.is_file():
-            source_hashes[name] = sha256_file(path)
-            _migrate_step3_csv(path, step2_index)
-            migrated_step3.append(name)
+            source_hashes[path.name] = sha256_file(path)
+            _migrate_step3_csv(path, step2_index, sample_cohort=POSITIVE_COHORT)
+            if path == old_path:
+                os.replace(old_path, new_path)
+            migrated_step3.append(new_name)
     _update_step3_manifest(step3_root / "manifest.json", migrated_step3, source_hashes)
     return {
         "step1_csvs": [str(path) for path in step1_files],
@@ -128,6 +146,8 @@ def _migrate_step2_csv(
 def _migrate_step3_csv(
     path: Path,
     step2_index: dict[tuple[str, str], dict[str, str]],
+    *,
+    sample_cohort: str,
 ) -> None:
     fields, rows = _read_csv(path)
     fields = _replace_field(fields, "step2_review_flag", "step2_needs_review")
@@ -135,6 +155,8 @@ def _migrate_step3_csv(
     fields = _replace_field(fields, "codex_review_review_flag", "codex_review_label")
     if "step1_label" not in fields:
         fields.insert(fields.index("step2_label"), "step1_label")
+    if "sample_cohort" not in fields:
+        fields.insert(fields.index("step1_label"), "sample_cohort")
 
     for row_number, row in enumerate(rows, start=2):
         key = (str(row.get("dataset_id", "")), str(row.get("patent_id", "")))
@@ -144,6 +166,10 @@ def _migrate_step3_csv(
         if row.get("step2_label") != lineage["step2_label"]:
             raise ValueError(f"{path}:{row_number}: step2_label changed from task database")
         row["step1_label"] = lineage["step1_label"]
+        current_cohort = str(row.get("sample_cohort", "") or "").strip()
+        if current_cohort and current_cohort != sample_cohort:
+            raise ValueError(f"{path}:{row_number}: conflicting sample_cohort")
+        row["sample_cohort"] = sample_cohort
         if "step2_review_flag" in row:
             row["step2_needs_review"] = _canonical_boolean(
                 row.pop("step2_review_flag"), path=path, row_number=row_number
@@ -249,15 +275,19 @@ def _update_step3_manifest(
     already_migrated = previous_migration.get("version") == "explicit-review-label-v1"
     manifest["schema_version"] = SCHEMA_VERSION
     manifest["human_results_policy"] = {
-        "path": str(path.parent / "result.csv"),
+        "path": str(path.parent / "result_positive.csv"),
         "label_field": "human_review_label",
         "allowed_values": list(LABELS),
         "result_fields": list(MANUAL_REVIEW_FIELDS),
     }
     manifest["manual_review_policy"]["fields"] = list(MANUAL_REVIEW_FIELDS)
     manifest["manual_review_policy"]["sha256"] = sha256_file(
-        path.parent / "need_manual_review.csv"
+        path.parent / "need_manual_review_positive.csv"
     )
+    manifest["manual_review_policy"]["path"] = str(
+        path.parent / "need_manual_review_positive.csv"
+    )
+    manifest["manual_review_policy"]["cohort"] = POSITIVE_COHORT
     manifest["manual_review_policy"]["human_fields_initially_blank"] = [
         "human_review_label",
         "human_reason",

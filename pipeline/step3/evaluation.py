@@ -31,9 +31,9 @@ def evaluate_pipeline_results(
 ) -> dict[str, Any]:
     """Calculate sample and design-weighted Step 1/2 binary metrics.
 
-    Design weights expand the 5,000 sampled records only to Step 3's eligible
-    Step 2 frame: all Step 2 DATA_SECURITY records plus S-to-OTHER hard
-    negatives. They do not estimate performance over excluded E-to-OTHER rows.
+    Design weights expand the reviewed sample to the sampling frame recorded in
+    the manifest. The dual-cohort design includes positive, hard-negative and
+    easy-negative Step 2 groups, covering the complete Step 2 task frame.
     """
 
     manifest = _read_manifest(paths.manifest)
@@ -41,6 +41,7 @@ def evaluate_pipeline_results(
     references = _read_reference_results(paths, expected_count=expected_count)
     step2_rows = _read_step2_rows(step2_databases)
     strata = _read_strata(manifest)
+    full_step2_frame = any(group == "easy_negative" for _, group in strata)
 
     joined: list[dict[str, Any]] = []
     sampled_strata: Counter[tuple[str, str]] = Counter()
@@ -123,9 +124,15 @@ def evaluate_pipeline_results(
             ),
         },
         "sampling_frame": {
-            "name": "step3_eligible_step2_tasks",
+            "name": (
+                "complete_step2_task_frame"
+                if full_step2_frame
+                else "step3_eligible_step2_tasks"
+            ),
             "definition": (
-                "step2_label=DATA_SECURITY OR "
+                "all succeeded Step 2 tasks"
+                if full_step2_frame
+                else "step2_label=DATA_SECURITY OR "
                 "(step1_route=S AND step2_label=OTHER)"
             ),
             "sample_records": len(joined),
@@ -139,7 +146,9 @@ def evaluate_pipeline_results(
                 }
                 for year, group in sorted(strata)
             ],
-            "excluded_from_frame": "step1_route=E AND step2_label=OTHER",
+            "excluded_from_frame": (
+                None if full_step2_frame else "step1_route=E AND step2_label=OTHER"
+            ),
         },
         "step1": {
             "prediction_mapping": {"S": "DATA_SECURITY", "E": "OTHER"},
@@ -166,12 +175,15 @@ def evaluate_pipeline_results(
             "recommended_primary_view": "eligible_frame_design_weighted",
             "limitations": [
                 (
-                    "Unweighted metrics describe only the positive-priority 5,000-record "
-                    "Step 3 sample and are not full-population accuracy estimates."
+                    "Unweighted metrics describe the deliberately balanced Step 3 sample "
+                    "and are not full-population accuracy estimates."
                 ),
                 (
-                    "Design-weighted metrics generalize only to the Step 3 eligible frame; "
-                    "E-to-OTHER records were not sampled for human review and are excluded."
+                    "Design-weighted metrics generalize to the complete Step 2 task frame. "
+                    "They do not by themselves generalize to patents excluded before Step 2."
+                    if full_step2_frame
+                    else "Design-weighted metrics generalize only to the Step 3 eligible "
+                    "frame; E-to-OTHER records were not sampled for human review."
                 ),
                 (
                     "Step 1 metrics treat route S as a positive prediction and route E as a "
@@ -298,6 +310,8 @@ def _sampling_group(route: str, label: str) -> str:
         return "positive"
     if route == "S" and label == "OTHER":
         return "hard_negative"
+    if route == "E" and label == "OTHER":
+        return "easy_negative"
     raise ValueError(
         "Step 3 result contains a record outside the evaluation frame: "
         f"route={route}, step2_label={label}"

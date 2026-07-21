@@ -10,6 +10,8 @@ import pytest
 from pipeline.step3.runner import _exclusive_lock, _runner_active
 from pipeline.step3.sampling import (
     MANUAL_REVIEW_FIELDS,
+    NEGATIVE_COHORT,
+    POSITIVE_COHORT,
     RESULT_FIELDS,
     SamplingConfig,
     _balanced_capacity_allocation,
@@ -19,6 +21,7 @@ from pipeline.step3.sampling import (
     assign_exact_splits,
     discover_step2_databases,
     finalize_human_results,
+    merge_review_results,
     step3_paths,
 )
 
@@ -41,6 +44,7 @@ def test_manual_review_row_exposes_step2_reason_and_blanks_human_fields() -> Non
         "claim": "权利要求",
         "ipc": "G06F21/00",
         "main_ipc": "G06F21/00",
+        "sample_cohort": POSITIVE_COHORT,
         "step1_label": "DATA_SECURITY",
         "step2_label": "OTHER",
         "step2_confidence": 0.9,
@@ -68,7 +72,7 @@ def test_sampling_groups_prioritize_positives_and_s_to_other_hard_negatives() ->
     assert _sampling_group("S", "DATA_SECURITY") == "positive"
     assert _sampling_group("E", "DATA_SECURITY") == "positive"
     assert _sampling_group("S", "OTHER") == "hard_negative"
-    assert _sampling_group("E", "OTHER") == ""
+    assert _sampling_group("E", "OTHER") == "easy_negative"
 
 
 def test_balanced_allocation_redistributes_only_after_a_year_hits_capacity() -> None:
@@ -160,6 +164,10 @@ def test_step3_paths_use_flat_runtime_and_dataset_directories(tmp_path: Path) ->
     assert paths.manifest == paths.root / "manifest.json"
     assert paths.progress == paths.root / "progress.json"
     assert paths.simulation == paths.root / "simulation.csv"
+    assert paths.manual_review == paths.root / "need_manual_review_positive.csv"
+    assert paths.manual_review_negative == paths.root / "need_manual_review_negative.csv"
+    assert paths.result_positive == paths.root / "result_positive.csv"
+    assert paths.result_negative == paths.root / "result_negative.csv"
     assert paths.results == paths.root / "result.csv"
     assert paths.train == paths.root / "dataset" / "train.csv"
 
@@ -231,6 +239,28 @@ def test_finalize_human_results_rejects_changed_frozen_text(tmp_path: Path) -> N
         finalize_human_results(paths, expected_count=20)
 
 
+def test_merge_review_results_requires_two_disjoint_explicit_cohorts(tmp_path: Path) -> None:
+    paths = step3_paths(tmp_path / "step3")
+    _write_human_result_fixture(paths)
+    fields, rows = _read_csv(paths.results)
+    for path, cohort_rows in (
+        (paths.result_positive, rows[:10]),
+        (paths.result_negative, rows[10:]),
+    ):
+        with path.open("w", encoding="utf-8-sig", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(cohort_rows)
+    paths.results.unlink()
+
+    report = merge_review_results(paths, expected_per_cohort=10)
+
+    _, combined = _read_csv(paths.results)
+    assert len(combined) == 20
+    assert report["duplicate_sample_ids"] == 0
+    assert report["output"]["records"] == 20
+
+
 def _write_human_result_fixture(
     paths,
     *,
@@ -262,6 +292,9 @@ def _write_human_result_fixture(
         )
         result = {
             **frozen,
+            "sample_cohort": (
+                POSITIVE_COHORT if index < 10 else NEGATIVE_COHORT
+            ),
             "step1_label": "DATA_SECURITY",
             "step2_label": "DATA_SECURITY" if index % 3 else "OTHER",
             "step2_confidence": "0.99",

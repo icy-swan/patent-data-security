@@ -13,10 +13,13 @@ from pipeline.step3.client import DEFAULT_MODEL, CodexAnnotationClient
 from pipeline.step3.evaluation import evaluate_pipeline_results
 from pipeline.step3.runner import read_progress, run_simulation
 from pipeline.step3.sampling import (
+    NEGATIVE_SAMPLE_SEED,
     SamplingConfig,
     discover_step2_databases,
     expand_sample,
     finalize_human_results,
+    merge_review_results,
+    prepare_negative_sample,
     prepare_sample,
     step3_paths,
 )
@@ -48,6 +51,22 @@ def build_parser() -> argparse.ArgumentParser:
     expand.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     expand.add_argument("--seed", default=SamplingConfig().seed)
 
+    prepare_negative = subparsers.add_parser(
+        "prepare-negative",
+        help="Append a disjoint 5,000-record negative-priority review cohort",
+    )
+    negative_sources = prepare_negative.add_mutually_exclusive_group()
+    negative_sources.add_argument("--step2-dir", type=Path, default=DEFAULT_STEP2)
+    negative_sources.add_argument("--database", type=Path, action="append")
+    prepare_negative.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    prepare_negative.add_argument("--seed", default=NEGATIVE_SAMPLE_SEED)
+
+    merge = subparsers.add_parser(
+        "merge",
+        help="Validate result_positive.csv and result_negative.csv, then create result.csv",
+    )
+    merge.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+
     simulate = subparsers.add_parser("simulate", help="Run provisional local Codex annotations")
     simulate.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     simulate.add_argument("--model", default=os.getenv("CODEX_MODEL", DEFAULT_MODEL))
@@ -70,7 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     finalize.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     finalize.add_argument("--step2-dir", type=Path, default=DEFAULT_STEP2)
     finalize.add_argument("--database", type=Path, action="append")
-    finalize.add_argument("--split-seed", default="step3-human-split-v2.3.0")
+    finalize.add_argument("--split-seed", default="step3-human-split-v2.5.0")
 
     evaluate = subparsers.add_parser(
         "evaluate",
@@ -113,8 +132,26 @@ def main() -> int:
             )
         )
         return 0
+    if args.command == "prepare-negative":
+        databases = args.database or discover_step2_databases(args.step2_dir)
+        paths, manifest = prepare_negative_sample(
+            databases,
+            args.output_dir,
+            seed=args.seed,
+        )
+        print(
+            json.dumps(
+                {"paths": _paths_json(paths), "manifest": manifest},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
 
     paths = step3_paths(args.output_dir)
+    if args.command == "merge":
+        print(json.dumps(merge_review_results(paths), ensure_ascii=False, indent=2))
+        return 0
     if args.command == "status":
         print(json.dumps(read_progress(paths), ensure_ascii=False, indent=2))
         return 0

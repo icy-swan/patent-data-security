@@ -7,13 +7,13 @@ the opaque `sample_id`; `patent_id` is never used to infer technical content.
 Default input:
 
 ```text
-data/step3/need_manual_review.csv
+data/step3/need_manual_review_positive.csv
 ```
 
 Default output:
 
 ```text
-data/step3/codex_result.csv
+data/step3/codex_result_positive.csv
 ```
 
 Run from the repository root:

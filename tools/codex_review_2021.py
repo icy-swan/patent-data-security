@@ -26,8 +26,8 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_INPUT = REPO_ROOT / "data/step3/need_manual_review.csv"
-DEFAULT_OUTPUT = REPO_ROOT / "data/step3/codex_result.csv"
+DEFAULT_INPUT = REPO_ROOT / "data/step3/need_manual_review_positive.csv"
+DEFAULT_OUTPUT = REPO_ROOT / "data/step3/codex_result_positive.csv"
 NEW_FIELDS = ["codex_review_label", "codex_review_reason"]
 
 

@@ -30,8 +30,12 @@ RESULT_FIELDS = (
     "source_row_number",
     "route",
     "selection_group",
+    "upstream_selection_probability",
+    "pool_selection_probability",
     "selection_probability",
     "sample_weight",
+    "pool_sample_seed",
+    "pool_sample_score",
     "status",
     "attempts",
     "requested_model",
@@ -143,7 +147,7 @@ def export_results(
         writer.writeheader()
         for row in connection.execute(
             "SELECT * FROM tasks WHERE status IN ('succeeded','failed') "
-            "ORDER BY source_row_number"
+            "ORDER BY dataset_id, source_row_number, patent_id"
         ):
             writer.writerow(_result_row(row))
     os.replace(temporary, paths.results)
@@ -276,7 +280,8 @@ def _claim_next(
         f"""
         SELECT * FROM tasks
         WHERE status='pending' AND attempts < ? {exclusion}
-        ORDER BY CASE route WHEN 'S' THEN 0 ELSE 1 END, source_row_number
+        ORDER BY CASE route WHEN 'S' THEN 0 ELSE 1 END,
+          dataset_id, source_row_number, patent_id
         LIMIT 1
         """,
         parameters,
@@ -506,7 +511,7 @@ def _progress(
         connection.execute("SELECT value FROM meta WHERE key='task_manifest'").fetchone()[0]
     )
     return {
-        "schema_version": "2.1.0",
+        "schema_version": "2.2.0",
         "dataset_id": manifest["dataset_id"],
         "database": str(paths.database),
         "result": str(paths.results),
@@ -561,8 +566,12 @@ def _result_row(row: sqlite3.Row) -> dict[str, Any]:
         "source_row_number": row["source_row_number"],
         "route": row["route"],
         "selection_group": row["selection_group"],
+        "upstream_selection_probability": row["upstream_selection_probability"],
+        "pool_selection_probability": row["pool_selection_probability"],
         "selection_probability": row["selection_probability"],
         "sample_weight": row["sample_weight"],
+        "pool_sample_seed": row["pool_sample_seed"],
+        "pool_sample_score": row["pool_sample_score"],
         "status": row["status"],
         "attempts": row["attempts"],
         "requested_model": row["requested_model"] or "",
@@ -637,6 +646,29 @@ def _ensure_runtime_schema(connection: sqlite3.Connection) -> None:
     }
     if "normalization_json" not in columns:
         connection.execute("ALTER TABLE tasks ADD COLUMN normalization_json TEXT")
+    if "upstream_selection_probability" not in columns:
+        connection.execute(
+            "ALTER TABLE tasks ADD COLUMN upstream_selection_probability REAL"
+        )
+    if "pool_selection_probability" not in columns:
+        connection.execute(
+            "ALTER TABLE tasks ADD COLUMN pool_selection_probability REAL"
+        )
+    if "pool_sample_seed" not in columns:
+        connection.execute("ALTER TABLE tasks ADD COLUMN pool_sample_seed TEXT")
+    if "pool_sample_score" not in columns:
+        connection.execute("ALTER TABLE tasks ADD COLUMN pool_sample_score TEXT")
+    connection.execute(
+        """
+        UPDATE tasks
+        SET upstream_selection_probability =
+              COALESCE(upstream_selection_probability, selection_probability),
+            pool_selection_probability =
+              COALESCE(pool_selection_probability, 1),
+            pool_sample_seed = COALESCE(pool_sample_seed, ''),
+            pool_sample_score = COALESCE(pool_sample_score, '')
+        """
+    )
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS task_attempts (

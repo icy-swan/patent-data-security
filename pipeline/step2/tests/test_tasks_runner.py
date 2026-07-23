@@ -8,7 +8,7 @@ from pipeline.step2.client import ClassificationResponse
 from pipeline.step2.prompt import load_prompt_bundle
 from pipeline.step2.runner import _exclusive_lock, run_tasks
 from pipeline.step2.schema import PatentClassification
-from pipeline.step2.tasks import prepare_tasks
+from pipeline.step2.tasks import prepare_task_pool, prepare_tasks
 
 
 def _write_inputs(tmp_path: Path) -> tuple[Path, Path]:
@@ -36,13 +36,21 @@ def test_prepare_binds_patent_id_locally_without_routing_leak(tmp_path: Path) ->
 
     assert manifest["task_counts"] == {
         "total": 2,
+        "by_dataset": {"2026": 2},
         "by_route": {"E": 1, "S": 1},
         "by_selection_group": {"E_random": 1, "S_all": 1},
     }
     assert manifest["statistics_binding"]["duplicate_task_patent_ids"] == 0
     assert paths.database == (tmp_path / "step2" / "2026" / "tasks.sqlite3").resolve()
     assert paths.manifest.name == "manifest.json"
+    assert paths.requests.name == "requests.jsonl"
     assert paths.results.name == "result.csv"
+    requests = [
+        json.loads(line)
+        for line in paths.requests.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [request["patent_id"] for request in requests] == ["CN-A", "CN-B"]
+    assert all("route" not in request for request in requests)
     connection = sqlite3.connect(paths.database)
     row = connection.execute(
         "SELECT patent_id, route, payload_json FROM tasks WHERE patent_id='CN-A'"
@@ -137,6 +145,98 @@ def test_runner_writes_model_result_under_local_patent_id_and_resumes(tmp_path: 
 def test_step2_defaults_to_ten_concurrent_requests() -> None:
     args = build_parser().parse_args(["run", "--input", "patents_2026.csv"])
     assert args.concurrency == 10
+    pool_args = build_parser().parse_args(["run", "--dataset-id", "pool-50000"])
+    assert pool_args.dataset_id == "pool-50000"
+
+
+def test_prepare_cross_year_fixed_size_pool_is_deterministic(tmp_path: Path) -> None:
+    raw_paths: list[Path] = []
+    step1_paths: list[Path] = []
+    rows = {
+        "2025": (("CN-A", "S", "1"), ("CN-B", "E", "0.02")),
+        "2026": (("CN-C", "S", "1"), ("CN-D", "E", "0.02")),
+    }
+    for year, patents in rows.items():
+        raw = tmp_path / f"上市公司专利明细_{year}年申请.csv"
+        raw.write_text(
+            "申请号,专利名称,摘要文本,主权项内容,IPC分类号,IPC主分类号\n"
+            + "".join(
+                f"{patent_id},{patent_id}名称,摘要,权项,H04L,H04L\n"
+                for patent_id, _route, _probability in patents
+            ),
+            encoding="utf-8",
+        )
+        result_dir = tmp_path / "step1" / year
+        result_dir.mkdir(parents=True)
+        result = result_dir / "result.csv"
+        result.write_text(
+            "dataset_id,patent_id,source_row_number,route,selected_for_step2,"
+            "selection_group,selection_probability,sample_weight\n"
+            + "".join(
+                f"{year},{patent_id},{offset},{route},true,"
+                f"{'S_all' if route == 'S' else 'E_random'},{probability},"
+                f"{1 / float(probability):.12g}\n"
+                for offset, (patent_id, route, probability) in enumerate(
+                    patents, start=2
+                )
+            ),
+            encoding="utf-8",
+        )
+        (result_dir / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "dataset_id": year,
+                    "input_size_bytes": raw.stat().st_size,
+                    "stats": {
+                        "selected_for_step2": {"S_all": 1, "E_random": 1}
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        raw_paths.append(raw)
+        step1_paths.append(result)
+
+    paths, manifest = prepare_task_pool(
+        raw_paths,
+        step1_paths,
+        tmp_path / "step2",
+        pool_size=3,
+        pool_seed="fixed-test-seed",
+        pool_id="pool-test",
+    )
+    assert manifest["candidate_frame"]["candidate_rows"] == 4
+    assert manifest["candidate_frame"]["unique_patents"] == 4
+    assert manifest["task_counts"]["total"] == 3
+    assert manifest["pool_sampling"]["pool_selection_probability"] == 0.75
+    payloads = [
+        json.loads(line)
+        for line in paths.requests.read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(payloads) == 3
+    assert all(set(payload) == {
+        "patent_id",
+        "title",
+        "abstract",
+        "claim",
+        "ipc",
+        "main_ipc",
+    } for payload in payloads)
+
+    connection = sqlite3.connect(paths.database)
+    probabilities = connection.execute(
+        """
+        SELECT upstream_selection_probability, pool_selection_probability,
+          selection_probability, sample_weight
+        FROM tasks
+        """
+    ).fetchall()
+    connection.close()
+    assert all(pool == 0.75 for _upstream, pool, _combined, _weight in probabilities)
+    assert all(
+        round(combined * weight, 12) == 1
+        for _upstream, _pool, combined, weight in probabilities
+    )
 
 
 def test_runner_removes_lock_after_exit(tmp_path: Path) -> None:

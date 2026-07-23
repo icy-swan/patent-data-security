@@ -11,14 +11,23 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from pipeline.common.datasets import dataset_id
+from pipeline.common.datasets import dataset_id, discover_files
 from pipeline.step2.client import ARK_BASE_URL, VolcengineArkClient
 from pipeline.step2.runner import read_progress, run_tasks
-from pipeline.step2.tasks import prepare_tasks, task_paths
+from pipeline.step2.tasks import (
+    DEFAULT_POOL_ID,
+    DEFAULT_POOL_SEED,
+    DEFAULT_POOL_SIZE,
+    prepare_task_pool,
+    prepare_tasks,
+    task_paths,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_STEP1 = PROJECT_ROOT / "data" / "step1"
 DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "step2"
+DEFAULT_RAW_DIR = PROJECT_ROOT / "data" / "raw" / "上市企业专利明细"
+DEFAULT_RAW_PATTERN = "上市公司专利明细_*年申请.csv"
 STOP_REQUESTED = False
 
 
@@ -37,8 +46,19 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--encoding", default="utf-8-sig")
     prepare.add_argument("--rebuild", action="store_true")
 
+    prepare_pool = subparsers.add_parser("prepare-pool")
+    prepare_pool.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
+    prepare_pool.add_argument("--pattern", default=DEFAULT_RAW_PATTERN)
+    prepare_pool.add_argument("--step1-dir", type=Path, default=DEFAULT_STEP1)
+    prepare_pool.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    prepare_pool.add_argument("--pool-size", type=int, default=DEFAULT_POOL_SIZE)
+    prepare_pool.add_argument("--pool-seed", default=DEFAULT_POOL_SEED)
+    prepare_pool.add_argument("--pool-id", default=DEFAULT_POOL_ID)
+    prepare_pool.add_argument("--encoding", default="utf-8-sig")
+    prepare_pool.add_argument("--rebuild", action="store_true")
+
     run = subparsers.add_parser("run")
-    run.add_argument("--input", type=Path, required=True, help="Used to resolve dataset ID")
+    _add_task_selector(run)
     run.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     run.add_argument("--model", default=os.getenv("ARK_MODEL"))
     run.add_argument("--base-url", default=os.getenv("ARK_BASE_URL", ARK_BASE_URL))
@@ -49,9 +69,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--pid-file", type=Path, help=argparse.SUPPRESS)
 
     start = subparsers.add_parser("start")
-    start.add_argument("--input", type=Path, required=True, help="Used to resolve dataset ID")
+    _add_task_selector(start)
     start.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    start.add_argument("--env-file", type=Path, default=PROJECT_ROOT / "v1" / ".env")
+    start.add_argument("--env-file", type=Path, default=PROJECT_ROOT / ".env")
     start.add_argument("--model")
     start.add_argument("--base-url")
     start.add_argument("--timeout-seconds", type=float, default=180)
@@ -60,13 +80,19 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--retry-delay-seconds", type=float, default=2)
 
     stop = subparsers.add_parser("stop")
-    stop.add_argument("--input", type=Path, required=True, help="Used to resolve dataset ID")
+    _add_task_selector(stop)
     stop.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
 
     status = subparsers.add_parser("status")
-    status.add_argument("--input", type=Path, required=True)
+    _add_task_selector(status)
     status.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     return parser
+
+
+def _add_task_selector(parser: argparse.ArgumentParser) -> None:
+    selector = parser.add_mutually_exclusive_group(required=True)
+    selector.add_argument("--input", type=Path, help="Resolve the task dataset ID from a file")
+    selector.add_argument("--dataset-id", help="Use an already prepared task dataset ID")
 
 
 def main() -> int:
@@ -92,7 +118,38 @@ def main() -> int:
         )
         return 0
 
-    paths = task_paths(args.output_dir, dataset_id(args.input))
+    if args.command == "prepare-pool":
+        raw_paths = discover_files(None, args.raw_dir, args.pattern)
+        step1_paths = tuple(
+            args.step1_dir.resolve() / dataset_id(path) / "result.csv"
+            for path in raw_paths
+        )
+        missing = [path for path in step1_paths if not path.is_file()]
+        if missing:
+            raise SystemExit(
+                "Missing Step 1 results: " + ", ".join(str(path) for path in missing)
+            )
+        paths, manifest = prepare_task_pool(
+            raw_paths,
+            step1_paths,
+            args.output_dir,
+            pool_size=args.pool_size,
+            pool_seed=args.pool_seed,
+            pool_id=args.pool_id,
+            encoding=args.encoding,
+            rebuild=args.rebuild,
+        )
+        print(
+            json.dumps(
+                {"paths": _paths_json(paths), "manifest": manifest},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    token = args.dataset_id or dataset_id(args.input)
+    paths = task_paths(args.output_dir, token)
     if args.command == "start":
         return _start_background(args, paths)
     if args.command == "stop":
@@ -168,8 +225,8 @@ def _start_background(args: argparse.Namespace, paths: Any) -> int:
         "-m",
         "pipeline.step2",
         "run",
-        "--input",
-        str(args.input.resolve()),
+        "--dataset-id",
+        paths.database.parent.name,
         "--output-dir",
         str(args.output_dir.resolve()),
         "--model",
@@ -288,7 +345,7 @@ def _remove_own_pid_file(path: Path | None) -> None:
 
 
 def _cleanup_completed_runtime(paths: Any, progress: dict[str, Any]) -> None:
-    """Keep only the four documented Step 2 artifacts after a complete run."""
+    """Keep only the five documented Step 2 artifacts after a complete run."""
 
     if progress.get("succeeded") != progress.get("total") or progress.get("failed"):
         return
@@ -329,6 +386,7 @@ def _paths_json(paths: Any) -> dict[str, str]:
     return {
         "database": str(paths.database),
         "manifest": str(paths.manifest),
+        "requests": str(paths.requests),
         "result": str(paths.results),
         "progress": str(paths.progress),
     }

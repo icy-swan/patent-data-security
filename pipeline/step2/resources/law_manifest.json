@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0.0",
-  "law_resource_version": "data-security-law-2021-current-20260716",
+  "law_resource_version": "data-security-law-2021-current-20260724",
   "title": "中华人民共和国数据安全法",
   "status": "现行有效",
   "adopted_on": "2021-06-10",
   "effective_on": "2021-09-01",
-  "verified_on": "2026-07-16",
+  "verified_on": "2026-07-24",
   "article_count": 55,
   "text_file": "data_security_law.txt",
   "text_sha256": "358d010532a79a0cfdebe810c5307ea25b8910552a475f172b4dd81f90bf2e80",
@@ -15,9 +15,9 @@
     "status_observed": "有效"
   },
   "retrieval_source": {
-    "publisher": "山东省通信管理局（工业和信息化部系统）",
-    "url": "https://sdca.miit.gov.cn/zwgk/fgbz/art/2026/art_ce88eeb3d3744672a54923061c125885.html",
-    "retrieved_on": "2026-07-16"
+    "publisher": "中国人大网（全国人民代表大会常务委员会）",
+    "url": "https://www.npc.gov.cn/npc/c2/c30834/202106/t20210610_311888.html",
+    "retrieved_on": "2026-07-24"
   },
   "normalization": [
     "只保留标题、通过信息、目录、章节标题和第五十五条法条正文",

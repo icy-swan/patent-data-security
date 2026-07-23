@@ -39,7 +39,7 @@ python -m pipeline.step2 prepare-pool \
 
 这条命令只准备任务，不调用模型。正式产物写入 `data/step2/pool-50000/`：
 
-- `requests.jsonl`：50,000 条待 GLM-5 识别的动态载荷，仅含专利审计键和正文输入；
+- `requests.jsonl`：50,000 条待识别动态载荷的离线审计副本，一行一件专利，不作为批量请求体；
 - `tasks.sqlite3`：本地任务绑定、状态、两阶段抽样概率和恢复信息；
 - `manifest.json`：来源哈希、全局去重、抽样参数和分层计数。
 
@@ -58,7 +58,11 @@ python -m pipeline.step2 run \
   --concurrency 10
 ```
 
-默认并发数为 10。运行终端和 `<dataset>/progress.json` 会持续更新完成数、成功/失败数、本次运行墙钟耗时、累计请求耗时、平均请求耗时、预计剩余秒数和预计完成时间。
+runner 从 `tasks.sqlite3` 每次领取一件专利，为它单独构造“固定 Prompt 前缀 + 当前专利动态
+后缀”，并单独调用一次 Responses API。请求之间不传递历史消息，也不把 `requests.jsonl`
+整包发送给模型。默认并发数为 10，表示最多同时执行 10 个彼此独立的单件请求。运行终端和
+`<dataset>/progress.json` 会持续更新完成数、成功/失败数、本次运行墙钟耗时、累计请求耗时、
+平均请求耗时、预计剩余秒数和预计完成时间。
 
 从仓库根目录 `.env` 读取 Agent Plan Key 并在后台启动：
 

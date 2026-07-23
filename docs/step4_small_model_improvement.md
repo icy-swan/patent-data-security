@@ -13,7 +13,7 @@
 balanced_accuracy 仅 0.60、负类 recall 0.20——模型学到的是数据集偏置而非判别边界。
 根因是训练集 76% 正、部署约 31% 正的分布错配。
 
-**基线（金标准 10,000 条口径，见 [step3_baseline_accuracy.md](file:///Users/bytedance/git/patent-data-security/docs/step3_baseline_accuracy.md)）**
+**基线（金标准 10,000 条口径，见 [step3_baseline_accuracy.md](step3_baseline_accuracy.md)）**
 
 | 上游 | accuracy | macro-F1 | 正类 recall | 负类 recall |
 |---|---|---|---|---|
@@ -29,9 +29,9 @@ balanced_accuracy 仅 0.60、负类 recall 0.20——模型学到的是数据集
 **交付**：方舟 `doubao-seed-2-0-mini`（260428）LoRA SFT，纯文本二分类，在线接入点推理。
 不平衡完全在**数据侧**解决（方舟托管 SFT 不暴露 class weight / focal loss）。
 
-### 2.1 数据构建（[build_manual.py](file:///Users/bytedance/git/patent-data-security/pipeline/step4_distill/build_manual.py)）
+### 2.1 数据构建
 
-以人工金标准 [result.csv](file:///Users/bytedance/git/patent-data-security/data/step3/result.csv)
+以人工金标准 [result.csv](../data/step3/result.csv)
 （10,000 条，`human_review_label`，DATA_SECURITY 4844 / OTHER 5156）为核心：
 
 1. **金标准 50/50 分层** → 5,000 条**冻结为测试集**（自然比例，不进训练）+ 5,000 条训练池。
@@ -88,9 +88,9 @@ SFT 每条为 `{"messages":[{"role":"user","content":<纯字符串>},{"role":"as
 
 训练曲线健康：train loss 0.086 → 0.027，eval loss 0.090 → 0.036（单调下降，收敛好）。
 
-**全量评估**：冻结金标准 [gold_test.jsonl](file:///Users/bytedance/git/patent-data-security/data/step4_manual/gold_test.jsonl)
-5,000 条 · parsed 5000 / failed 0 · **0 乱码**
-（脚本 [evaluate.py](file:///Users/bytedance/git/patent-data-security/pipeline/step4_distill/evaluate.py)，产物 `data/step4_manual/eval_A_sknwc/`）。
+**全量评估**：冻结金标准 [gold_test.jsonl](../data/step4_manual/gold_test.jsonl)
+5,000 条 · parsed 5000 / failed 0 · **0 乱码**。评估产物保存在
+`data/step4_manual/eval_A_sknwc/`。
 
 ### 口径1：自然比例（48.4% 正，金标原始）
 
@@ -134,9 +134,7 @@ SFT 每条为 `{"messages":[{"role":"user","content":<纯字符串>},{"role":"as
 
 | 产物 | 路径 |
 |---|---|
-| 数据构建脚本 | [build_manual.py](file:///Users/bytedance/git/patent-data-security/pipeline/step4_distill/build_manual.py) |
-| 评估脚本 | [evaluate.py](file:///Users/bytedance/git/patent-data-security/pipeline/step4_distill/evaluate.py) |
 | 训练集 / 验证集 / 冻结测试集 | `data/step4_manual/{train,validation,gold_test}.jsonl` |
-| 数据 manifest（哈希/配比/去泄漏） | [manifest.json](file:///Users/bytedance/git/patent-data-security/data/step4_manual/manifest.json) |
+| 数据 manifest（哈希/配比/去泄漏） | [manifest.json](../data/step4_manual/manifest.json) |
 | 评估结果 | `data/step4_manual/eval_A_sknwc/`（summary + predictions + 误分类 CSV） |
-| 基线报告 | [step3_baseline_accuracy.md](file:///Users/bytedance/git/patent-data-security/docs/step3_baseline_accuracy.md) |
+| 基线报告 | [step3_baseline_accuracy.md](step3_baseline_accuracy.md) |

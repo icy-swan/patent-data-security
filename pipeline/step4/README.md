@@ -1,12 +1,12 @@
 # Step 4：RoBERTa 分类与 MaaS SFT 数据
 
-从 Step 3 已冻结的 4,000/500/500 切分生成 Step 4 数据：
+从 Step 3 已冻结的 8,000/1,000/1,000 切分生成 Step 4 数据：
 
 ```bash
 python -m pipeline.step4 prepare
 ```
 
-命令只接受由 Step 3 根目录 `result.csv` 人工结果生成的 4,000/500/500 结构化切分，严格检查
+命令只接受由 Step 3 根目录 `result.csv` 人工结果生成的 8,000/1,000/1,000 结构化切分，严格检查
 结果文件与三个切分逐字段一致、唯一专利、`human_evaluation=true/false`，以及完全相同文本的
 跨集合泄漏。Codex `simulation.csv` 不能作为 Step 4 输入。
 
@@ -34,8 +34,9 @@ SFT 文件每行顶层只有 `messages`。消息严格复用 Step 2 生产请求
 Step 2 兼容的结构化分类结果（含标签、理由和逐字证据）。只生成 train 和 validation；测试集
 不导出为 SFT 文件。`index.csv` 用于把 MaaS 行号追溯到 `sample_id`，不要上传为训练集。
 
-旧的 4,000 条简化 Prompt 基线保存在 `data/step4/archive/data-security-binary-v1.0.0/`，不会与
-新的 canonical `data/step4/dataset/` 混用。
+历史实验使用的 4,000 条简化 Prompt 基线保存在
+`data/step4/archive/data-security-binary-v1.0.0/`；它不是当前切分，不会与新的 canonical
+`data/step4/dataset/` 混用。
 
 安装并训练论文式 RoBERTa 分类器：
 

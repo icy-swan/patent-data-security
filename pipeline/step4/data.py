@@ -22,13 +22,13 @@ from pipeline.step2.prompt import (
 )
 from pipeline.step2.schema import PatentClassification
 
-DATASET_VERSION = "data-security-binary-v1.1.0"
+DATASET_VERSION = "data-security-binary-v1.2.0"
 SCHEMA_VERSION = "1.1.0"
 SFT_PROMPT_VERSION = PROMPT_VERSION
 LABEL_TO_ID = {"OTHER": 0, "DATA_SECURITY": 1}
 HUMAN_EVALUATION_TO_LABEL = {"false": "OTHER", "true": "DATA_SECURITY"}
 SPLITS = ("train", "validation", "test")
-EXPECTED_SPLIT_COUNTS = {"train": 4_000, "validation": 500, "test": 500}
+EXPECTED_SPLIT_COUNTS = {"train": 8_000, "validation": 1_000, "test": 1_000}
 
 REQUIRED_FIELDS = (
     "sample_id",

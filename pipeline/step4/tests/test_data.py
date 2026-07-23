@@ -8,7 +8,15 @@ from pathlib import Path
 import pytest
 
 from pipeline.step2.prompt import build_dynamic_message, load_prompt_bundle
-from pipeline.step4.data import REQUIRED_FIELDS, prepare_datasets
+from pipeline.step4.data import EXPECTED_SPLIT_COUNTS, REQUIRED_FIELDS, prepare_datasets
+
+
+def test_default_split_contract_is_frozen_gold_8_1_1() -> None:
+    assert EXPECTED_SPLIT_COUNTS == {
+        "train": 8_000,
+        "validation": 1_000,
+        "test": 1_000,
+    }
 
 
 def test_prepare_exports_classifier_and_blind_test_free_sft(tmp_path: Path) -> None:
@@ -52,7 +60,7 @@ def test_prepare_exports_classifier_and_blind_test_free_sft(tmp_path: Path) -> N
     assert manifest["classifier"]["validation_selection_metric"] == "accuracy"
     assert manifest["classifier"]["prediction_rule"] == "softmax_argmax"
     assert manifest["sft"]["test_exported"] is False
-    assert manifest["sft"]["prompt_version"] == "data-security-binary-v2.1.0"
+    assert manifest["sft"]["prompt_version"] == production_prompt.prompt_version
     assert manifest["sft"]["assistant_target"] == (
         "step2_compatible_structured_classification"
     )

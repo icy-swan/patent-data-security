@@ -14,28 +14,26 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from tempfile import TemporaryDirectory
-from typing import Any, get_args
+from typing import Any
 
 from pipeline.common.io import atomic_json_write, sha256_file
-from pipeline.step2.schema import (
-    IndustrySector,
-    PatentClassification,
-    ProcessingActivity,
-    ScopeBasis,
-)
+from pipeline.step2.schema import PatentClassification
 
-SAMPLING_VERSION = "step3-dual-cohort-v2.5.0"
-SCHEMA_VERSION = "2.5.0"
-# Keep the v2.2.0 seed so the original 4,000 records remain a strict subset
-# of the expanded 5,000-record sample. This preserves completed review work.
-COMPATIBLE_SAMPLE_SEED = "step3-positive-priority-hard-negative-v2.2.0"
-COMPATIBLE_SAMPLE_ID_VERSION = "step3-positive-priority-hard-negative-v2.2.0"
+SAMPLING_VERSION = "step3-50000-to-10000-dual-cohort-v2.6.0"
+SCHEMA_VERSION = "2.6.0"
+EXPECTED_STEP2_POPULATION = 50_000
+SAMPLE_SEED = "step3-50000-positive-priority-v2.6.0"
+SAMPLE_ID_VERSION = "step3-50000-dual-cohort-v2.6.0"
 LABELS = ("DATA_SECURITY", "OTHER")
 SAMPLING_GROUPS = ("positive", "hard_negative", "easy_negative")
 POSITIVE_COHORT = "positive_priority"
 NEGATIVE_COHORT = "negative_priority"
-NEGATIVE_SAMPLE_SEED = "step3-negative-priority-v2.5.0"
+NEGATIVE_SAMPLE_SEED = "step3-50000-negative-priority-v2.6.0"
+NEGATIVE_PRIORITY_GROUP_TARGETS = {
+    "positive": 2_000,
+    "hard_negative": 1_000,
+    "easy_negative": 2_000,
+}
 SPLITS = ("train", "validation", "test")
 SPLIT_RATIOS = {"train": 0.8, "validation": 0.1, "test": 0.1}
 
@@ -108,7 +106,7 @@ class SamplingConfig:
     target_size: int = 5_000
     positive_size: int = 3_000
     hard_negative_size: int = 2_000
-    seed: str = COMPATIBLE_SAMPLE_SEED
+    seed: str = SAMPLE_SEED
 
     @property
     def group_targets(self) -> dict[str, int]:
@@ -186,6 +184,7 @@ def prepare_sample(
     paths = step3_paths(output_dir)
     _prepare_output(paths, rebuild=rebuild)
     all_records, source_summary, logical_digest = _load_population(database_paths)
+    _validate_step2_population(len(all_records))
     records = [
         record
         for record in all_records
@@ -273,7 +272,7 @@ def prepare_sample(
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "sampling_version": SAMPLING_VERSION,
-        "sample_id_version": COMPATIBLE_SAMPLE_ID_VERSION,
+        "sample_id_version": SAMPLE_ID_VERSION,
         "target_size": config.target_size,
         "sampling_group_targets": config.group_targets,
         "positive_definition": "step2_label=DATA_SECURITY",
@@ -339,8 +338,8 @@ def prepare_negative_sample(
     """Append a disjoint 5,000-record negative-priority review cohort.
 
     The requested 2:3 ratio describes frozen Step 2 predictions, not the unknown
-    human Gold labels. All remaining S-to-OTHER records are preferred before
-    E-to-OTHER records are used to complete the 3,000 negative-prediction quota.
+    human Gold labels. Fixed subgroup quotas retain hard-negative emphasis while
+    giving easy negatives non-zero inclusion probability in the 50,000-record frame.
     """
 
     paths = step3_paths(output_dir)
@@ -396,23 +395,17 @@ def prepare_negative_sample(
     existing_sample_ids = {row["sample_id"] for row in positive_rows}
 
     all_records, source_summary, logical_digest = _load_population(database_paths)
+    _validate_step2_population(len(all_records))
     remaining = [row for row in all_records if row["patent_id"] not in existing_patent_ids]
     remaining_by_group: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for record in remaining:
         remaining_by_group[record["sampling_group"]].append(record)
 
-    positive_target = 2_000
-    negative_target = 3_000
-    hard_negative_target = min(
-        negative_target,
-        len(remaining_by_group["hard_negative"]),
+    group_targets = dict(NEGATIVE_PRIORITY_GROUP_TARGETS)
+    positive_target = group_targets["positive"]
+    negative_target = (
+        group_targets["hard_negative"] + group_targets["easy_negative"]
     )
-    easy_negative_target = negative_target - hard_negative_target
-    group_targets = {
-        "positive": positive_target,
-        "hard_negative": hard_negative_target,
-        "easy_negative": easy_negative_target,
-    }
     for group, target in group_targets.items():
         available = len(remaining_by_group[group])
         if available < target:
@@ -461,7 +454,7 @@ def prepare_negative_sample(
                 row.update(
                     {
                         "sample_id": _sample_id(
-                            COMPATIBLE_SAMPLE_SEED,
+                            SAMPLE_SEED,
                             row["dataset_id"],
                             row["patent_id"],
                         ),
@@ -584,8 +577,8 @@ def prepare_negative_sample(
             "sampling_group_targets": dict(sorted(group_targets.items())),
             "conditional_strata": cohort_strata,
             "hard_negative_priority": (
-                "select all remaining step1_label=DATA_SECURITY and step2_label=OTHER "
-                "before filling from step1_label=OTHER and step2_label=OTHER"
+                "fixed 1,000 hard-negative and 2,000 easy-negative quotas preserve "
+                "boundary emphasis and complete-frame coverage"
             ),
         },
     }
@@ -609,6 +602,7 @@ def prepare_negative_sample(
         "negative_records_added": 5_000,
         "cohort_overlap_records": 0,
         "negative_step2_predicted_ratio": "2:3",
+        "negative_subgroup_ratio": "hard_negative:easy_negative=1:2",
         "combined_step2_predicted_ratio": "1:1",
         "gold_ratio_status": "unknown_until_negative_human_review",
         "expanded_at": _now(),
@@ -691,168 +685,6 @@ def merge_review_results(
     manifest.pop("evaluation", None)
     atomic_json_write(paths.manifest, manifest)
     return report
-
-
-def expand_sample(
-    databases: Iterable[str | Path],
-    output_dir: str | Path,
-    *,
-    config: SamplingConfig | None = None,
-) -> tuple[Step3Paths, dict[str, Any]]:
-    """Expand the frozen v2.2.0 sample without changing its existing 4,000 rows."""
-
-    config = config or SamplingConfig()
-    _validate_config(config)
-    paths = step3_paths(output_dir)
-    if not paths.database.is_file() or not paths.manifest.is_file():
-        raise FileNotFoundError(
-            "Step 3 expand requires an existing tasks.sqlite3 and manifest.json"
-        )
-    database_paths = sorted({Path(path).resolve() for path in databases})
-    if not database_paths:
-        raise ValueError("At least one Step 2 database is required")
-
-    previous_manifest = json.loads(paths.manifest.read_text(encoding="utf-8"))
-    previous_manifest_sha256 = sha256_file(paths.manifest)
-    previous_target = int(previous_manifest.get("target_size", 0))
-    if previous_target != 4_000:
-        raise ValueError(
-            f"Step 3 expand only accepts the frozen 4,000-record baseline, found {previous_target}"
-        )
-    if previous_manifest.get("seed") != config.seed:
-        raise ValueError(
-            "Existing Step 3 seed differs; expansion would not preserve sample identity"
-        )
-
-    with TemporaryDirectory(prefix="step3-expand-") as temporary_dir:
-        desired_paths, desired_manifest = prepare_sample(
-            database_paths,
-            temporary_dir,
-            config=config,
-        )
-        desired_connection = sqlite3.connect(
-            f"file:{desired_paths.database}?mode=ro&immutable=1", uri=True
-        )
-        desired_connection.row_factory = sqlite3.Row
-        desired_rows = {
-            str(row["sample_id"]): dict(row)
-            for row in desired_connection.execute(
-                "SELECT sample_id,dataset_id,application_year,patent_id,payload_json "
-                "FROM tasks ORDER BY sample_id"
-            )
-        }
-        desired_connection.close()
-        with desired_paths.manual_review.open(encoding="utf-8-sig", newline="") as file:
-            desired_manual_review = list(csv.DictReader(file))
-
-    with _exclusive_database_update(paths.database):
-        connection = sqlite3.connect(paths.database)
-        connection.row_factory = sqlite3.Row
-        if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-            connection.close()
-            raise ValueError(f"SQLite integrity check failed for {paths.database}")
-        existing_rows = {
-            str(row["sample_id"]): dict(row)
-            for row in connection.execute(
-                "SELECT sample_id,dataset_id,application_year,patent_id,payload_json "
-                "FROM tasks ORDER BY sample_id"
-            )
-        }
-        if len(existing_rows) != previous_target:
-            connection.close()
-            raise ValueError(
-                "Existing task count differs from manifest: "
-                f"{len(existing_rows)} != {previous_target}"
-            )
-        unexpected = sorted(set(existing_rows) - set(desired_rows))
-        if unexpected:
-            connection.close()
-            raise ValueError(
-                "Existing sample is not a subset of the expanded sample: "
-                f"{unexpected[:5]}"
-            )
-        for sample_id, existing in existing_rows.items():
-            desired = desired_rows[sample_id]
-            for field in (
-                "dataset_id",
-                "application_year",
-                "patent_id",
-                "payload_json",
-            ):
-                if str(existing[field]) != str(desired[field]):
-                    connection.close()
-                    raise ValueError(
-                        f"Expanded sample changed {field} for existing sample {sample_id}"
-                    )
-
-        additions = [desired_rows[key] for key in sorted(set(desired_rows) - set(existing_rows))]
-        if len(additions) != config.target_size - previous_target:
-            connection.close()
-            raise AssertionError(
-                f"Expected {config.target_size - previous_target} additions, found {len(additions)}"
-            )
-        now = _now()
-        connection.executemany(
-            """
-            INSERT INTO tasks (
-              sample_id,dataset_id,application_year,patent_id,payload_json,
-              status,created_at,updated_at
-            ) VALUES (?,?,?,?,?,'pending',?,?)
-            """,
-            [
-                (
-                    row["sample_id"],
-                    row["dataset_id"],
-                    row["application_year"],
-                    row["patent_id"],
-                    row["payload_json"],
-                    now,
-                    now,
-                )
-                for row in additions
-            ],
-        )
-        connection.commit()
-        status_counts = dict(
-            connection.execute("SELECT status,COUNT(*) FROM tasks GROUP BY status")
-        )
-        connection.close()
-
-    _write_csv(paths.manual_review, MANUAL_REVIEW_FIELDS, desired_manual_review)
-
-    desired_manifest["outputs"] = {
-        key: str(getattr(paths, key))
-        for key in ("database", "manifest", "manual_review")
-    }
-    desired_manifest["human_results_policy"]["path"] = str(paths.result_positive)
-    desired_manifest["finalize_outputs"] = {
-        "result": str(paths.results),
-        "train": str(paths.train),
-        "validation": str(paths.validation),
-        "test": str(paths.test),
-    }
-    desired_manifest["expansion"] = {
-        "strategy": "preserve_v2.2.0_4000_and_add_1000_hard_negatives",
-        "previous_manifest_sha256": previous_manifest_sha256,
-        "previous_target_size": previous_target,
-        "preserved_tasks": len(existing_rows),
-        "added_tasks": len(additions),
-        "added_task_status": "pending",
-        "previous_result_records": _csv_record_count(paths.result_positive),
-        "previous_result_sha256": (
-            sha256_file(paths.result_positive) if paths.result_positive.is_file() else None
-        ),
-        "previous_human_results_status": "partial_for_expanded_sample",
-        "previous_result_provenance": previous_manifest.get("result_preparation"),
-        "expanded_at": _now(),
-    }
-    desired_manifest["annotation_state"] = {
-        "status_counts": dict(sorted(status_counts.items())),
-        "result_is_complete": False,
-        "stale_split_files_must_not_be_used": True,
-    }
-    atomic_json_write(paths.manifest, desired_manifest)
-    return paths, desired_manifest
 
 
 def assign_exact_splits(
@@ -960,7 +792,7 @@ def write_simulation_dataset(
 def finalize_human_results(
     paths: Step3Paths,
     *,
-    split_seed: str = "step3-human-split-v2.5.0",
+    split_seed: str = "step3-human-split-v2.6.0",
     expected_count: int | None = None,
 ) -> dict[str, Any]:
     """Validate explicit human Gold labels and create exact 8:1:1 splits."""
@@ -1341,6 +1173,14 @@ def _sampling_group_from_labels(step1_label: str, step2_label: str) -> str:
             f"Unsupported Step 1/2 labels: step1={step1_label!r}, step2={step2_label!r}"
         )
     return _sampling_group(route, step2_label)
+
+
+def _validate_step2_population(population_size: int) -> None:
+    if population_size != EXPECTED_STEP2_POPULATION:
+        raise ValueError(
+            "Step 3 requires the frozen 50,000-record Step 2 frame; "
+            f"found {population_size} records"
+        )
 
 
 def _balanced_capacity_allocation(
@@ -1762,7 +1602,7 @@ def _stable_score(*parts: str) -> str:
 
 def _sample_id(seed: str, dataset_id: str, patent_id: str) -> str:
     digest = hashlib.blake2b(
-        f"{COMPATIBLE_SAMPLE_ID_VERSION}|{seed}|{dataset_id}|{patent_id}".encode(),
+        f"{SAMPLE_ID_VERSION}|{seed}|{dataset_id}|{patent_id}".encode(),
         digest_size=12,
     ).hexdigest()
     return f"step3-{digest}"

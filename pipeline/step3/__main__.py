@@ -16,7 +16,6 @@ from pipeline.step3.sampling import (
     NEGATIVE_SAMPLE_SEED,
     SamplingConfig,
     discover_step2_databases,
-    expand_sample,
     finalize_human_results,
     merge_review_results,
     prepare_negative_sample,
@@ -42,18 +41,12 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--seed", default=SamplingConfig().seed)
     prepare.add_argument("--rebuild", action="store_true")
 
-    expand = subparsers.add_parser(
-        "expand", help="Preserve the frozen 4,000 records and append 1,000 hard negatives"
-    )
-    expand_sources = expand.add_mutually_exclusive_group()
-    expand_sources.add_argument("--step2-dir", type=Path, default=DEFAULT_STEP2)
-    expand_sources.add_argument("--database", type=Path, action="append")
-    expand.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    expand.add_argument("--seed", default=SamplingConfig().seed)
-
     prepare_negative = subparsers.add_parser(
         "prepare-negative",
-        help="Append a disjoint 5,000-record negative-priority review cohort",
+        help=(
+            "Append 2,000 predicted positives, 1,000 hard negatives "
+            "and 2,000 easy negatives"
+        ),
     )
     negative_sources = prepare_negative.add_mutually_exclusive_group()
     negative_sources.add_argument("--step2-dir", type=Path, default=DEFAULT_STEP2)
@@ -89,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     finalize.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     finalize.add_argument("--step2-dir", type=Path, default=DEFAULT_STEP2)
     finalize.add_argument("--database", type=Path, action="append")
-    finalize.add_argument("--split-seed", default="step3-human-split-v2.5.0")
+    finalize.add_argument("--split-seed", default="step3-human-split-v2.6.0")
 
     evaluate = subparsers.add_parser(
         "evaluate",
@@ -114,21 +107,6 @@ def main() -> int:
         print(
             json.dumps(
                 {"paths": _paths_json(paths), "manifest": manifest}, ensure_ascii=False, indent=2
-            )
-        )
-        return 0
-    if args.command == "expand":
-        databases = args.database or discover_step2_databases(args.step2_dir)
-        paths, manifest = expand_sample(
-            databases,
-            args.output_dir,
-            config=SamplingConfig(seed=args.seed),
-        )
-        print(
-            json.dumps(
-                {"paths": _paths_json(paths), "manifest": manifest},
-                ensure_ascii=False,
-                indent=2,
             )
         )
         return 0

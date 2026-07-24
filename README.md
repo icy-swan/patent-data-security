@@ -95,8 +95,9 @@ tail -n 50 -f data/step2/runner.log
 `runner.pid`、`runner.log`、锁文件及 SQLite sidecar 会在全部任务成功后删除。
 
 Step 3 采用两个互不重叠的 5,000 条队列：第一批按 Step 2 预测正/负 3:2 抽取，第二批按
-2:3 抽取并优先覆盖剩余 `Step1=DATA_SECURITY → Step2=OTHER` 难负例。两批合并后按 Step 2
-预测标签为 1:1；真实 Gold 比例以人工复核结果为准。详细命令见
+2:3 抽取，其中固定包含 1,000 条 `Step1=DATA_SECURITY → Step2=OTHER` 难负例和 2,000 条
+`Step1=OTHER → Step2=OTHER` 容易负例。两批合并后按 Step 2 预测标签为 1:1，并覆盖完整
+50,000 条 Step 2 任务池的三个抽样组；真实 Gold 比例以人工复核结果为准。详细命令见
 [pipeline/step3/README.md](pipeline/step3/README.md)。
 
 人工复核输入为 `data/step3/need_manual_review_positive.csv` 和

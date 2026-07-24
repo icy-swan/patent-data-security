@@ -11,6 +11,7 @@ from pipeline.step3.runner import _exclusive_lock, _runner_active
 from pipeline.step3.sampling import (
     MANUAL_REVIEW_FIELDS,
     NEGATIVE_COHORT,
+    NEGATIVE_PRIORITY_GROUP_TARGETS,
     POSITIVE_COHORT,
     RESULT_FIELDS,
     SamplingConfig,
@@ -18,6 +19,7 @@ from pipeline.step3.sampling import (
     _initialize_task_database,
     _manual_review_row,
     _sampling_group,
+    _validate_step2_population,
     assign_exact_splits,
     discover_step2_databases,
     finalize_human_results,
@@ -26,11 +28,23 @@ from pipeline.step3.sampling import (
 )
 
 
-def test_default_sampling_config_expands_only_the_hard_negative_quota() -> None:
+def test_default_dual_cohort_targets_cover_all_sampling_groups() -> None:
     config = SamplingConfig()
 
     assert config.target_size == 5_000
     assert config.group_targets == {"positive": 3_000, "hard_negative": 2_000}
+    assert NEGATIVE_PRIORITY_GROUP_TARGETS == {
+        "positive": 2_000,
+        "hard_negative": 1_000,
+        "easy_negative": 2_000,
+    }
+
+
+def test_step3_accepts_only_the_frozen_50000_record_frame() -> None:
+    _validate_step2_population(50_000)
+
+    with pytest.raises(ValueError, match="50,000-record"):
+        _validate_step2_population(20_000)
 
 
 def test_manual_review_row_exposes_step2_reason_and_blanks_human_fields() -> None:

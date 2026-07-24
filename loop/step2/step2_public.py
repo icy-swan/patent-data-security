@@ -12,6 +12,7 @@ import hashlib
 import importlib
 import json
 import os
+import re
 import sqlite3
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -28,10 +29,15 @@ REQUEST_FIELDS = (
     "task_id",
     "dataset_id",
     "patent_id",
+    "application_date",
+    "application_year",
     "title",
     "abstract",
     "claim",
     "ipc",
+    "step1_selection_probability",
+    "step2_pool_inclusion_probability",
+    "combined_step2_inclusion_probability",
 )
 RESULT_FIELDS = REQUEST_FIELDS + (
     "step1_route",
@@ -144,14 +150,26 @@ def prepare_public_step2(
             patent_id = str(row.get("patent_id", "")).strip()
             if not patent_id:
                 raise ValueError(f"{source_path} 存在空 patent_id")
+            application_date = str(row.get("application_date", "") or "").strip()
             candidate = {
                 "dataset_id": str(row.get("dataset_id", "")).strip(),
                 "patent_id": patent_id,
+                "application_date": application_date,
+                "application_year": extract_application_year(
+                    application_date,
+                    fallback=str(row.get("dataset_id", "")).strip(),
+                ),
                 "title": str(row.get("title", "") or ""),
                 "abstract": str(row.get("abstract", "") or ""),
                 "claim": str(row.get("claim", "") or ""),
                 "ipc": str(row.get("ipc", "") or ""),
                 "step1_route": str(row.get("route", "") or ""),
+                "step1_selection_probability": format_probability(
+                    parse_probability(
+                        row.get("selection_probability", "1"),
+                        field="selection_probability",
+                    )
+                ),
             }
             existing = candidates.get(patent_id)
             if existing is None or _candidate_quality(candidate) > _candidate_quality(existing):
@@ -177,16 +195,24 @@ def prepare_public_step2(
         ),
     )
     selected = ranked[:pool_size]
+    pool_probability = pool_size / len(candidates)
     prepared_rows = []
     for source_order, row in enumerate(selected):
         task_id = "public-step2-" + hashlib.sha256(
             f"public-step2-task-v1|{row['patent_id']}".encode()
         ).hexdigest()[:24]
+        step1_probability = float(row["step1_selection_probability"])
         prepared_rows.append(
             {
                 "task_id": task_id,
                 "source_order": source_order,
                 **row,
+                "step2_pool_inclusion_probability": format_probability(
+                    pool_probability
+                ),
+                "combined_step2_inclusion_probability": format_probability(
+                    step1_probability * pool_probability
+                ),
             }
         )
 
@@ -217,6 +243,7 @@ def prepare_public_step2(
         "pool": {
             "candidate_patents": len(candidates),
             "selected_patents": len(prepared_rows),
+            "inclusion_probability": pool_probability,
             "seed": pool_seed,
             "selection": "SHA256 fixed-size sampling without replacement",
             "step1_route_counts": dict(
@@ -623,6 +650,27 @@ def _candidate_quality(row: Mapping[str, str]) -> tuple[int, int, int]:
 
 def stable_score(seed: str, patent_id: str) -> str:
     return hashlib.sha256(f"{seed}|{patent_id}".encode()).hexdigest()
+
+
+def parse_probability(value: Any, *, field: str) -> float:
+    try:
+        probability = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{field} 必须是 (0, 1] 内的数值") from error
+    if not 0 < probability <= 1:
+        raise ValueError(f"{field} 必须是 (0, 1] 内的数值")
+    return probability
+
+
+def format_probability(value: float) -> str:
+    return f"{value:.12g}"
+
+
+def extract_application_year(value: str, *, fallback: str = "") -> str:
+    for candidate in (value, fallback):
+        if match := re.search(r"(?<!\d)((?:18|19|20|21)\d{2})(?!\d)", candidate):
+            return match.group(1)
+    return "UNKNOWN"
 
 
 def connect(path: Path, *, read_only: bool = False) -> sqlite3.Connection:

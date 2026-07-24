@@ -1,0 +1,24 @@
+{
+  "step2_result": "",
+  "output_dir": "output",
+  "expected_population_size": 50000,
+  "encoding": "utf-8-sig",
+  "cohorts": {
+    "positive_priority": {
+      "seed": "public-step3-positive-priority-v1",
+      "group_targets": {
+        "positive": 3000,
+        "hard_negative": 2000,
+        "easy_negative": 0
+      }
+    },
+    "negative_priority": {
+      "seed": "public-step3-negative-priority-v1",
+      "group_targets": {
+        "positive": 2000,
+        "hard_negative": 1000,
+        "easy_negative": 2000
+      }
+    }
+  }
+}

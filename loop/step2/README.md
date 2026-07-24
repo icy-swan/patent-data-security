@@ -67,7 +67,8 @@ python -m loop.step2.step2_public run \
 ```
 
 主程序每次只把一件专利交给一次 `classify` 调用，不传递前一件专利的上下文；送入适配器
-的字段严格限于 `title`、`abstract`、`claim` 和 `ipc`，不会发送任务编号或数据集编号。
+的字段严格限于 `title`、`abstract`、`claim` 和 `ipc`，不会发送任务编号、数据集编号、
+申请日期或抽样概率。
 供应商地址、认证和请求细节全部留在使用者自己的适配器中，不进入本公开目录。
 
 ## Prompt 返回格式
@@ -95,11 +96,15 @@ python -m loop.step2.step2_public run \
 全部任务成功后才生成 `result.csv`，字段为：
 
 ```text
-task_id,dataset_id,patent_id,title,abstract,claim,ipc,
+task_id,dataset_id,patent_id,application_date,application_year,
+title,abstract,claim,ipc,
+step1_selection_probability,step2_pool_inclusion_probability,
+combined_step2_inclusion_probability,
 step1_route,step2_label,step2_reason,step2_evidence
 ```
 
-该文件只包含论文分类与审计所需内容。`progress.json` 只记录完成、失败、排队和运行数量。
+申请日期和年份仅用于 Step 3 的年份均衡抽样；三个概率字段用于恢复从 Step 1 到 Step 2
+任务池的纳入概率。它们均不会发送给模型。`progress.json` 只记录完成、失败、排队和运行数量。
 
 ## 测试
 

@@ -100,6 +100,7 @@ class PublicStep1Tests(unittest.TestCase):
             by_id = {row["patent_id"]: row for row in rows}
             self.assertEqual(len(rows), 3)
             self.assertEqual(by_id["P1"]["route"], "S")
+            self.assertEqual(by_id["P1"]["application_date"], "2020-01-01")
             self.assertEqual(by_id["P1"]["association_count"], "2")
             self.assertEqual(by_id["P2"]["route"], "S")
             self.assertEqual(by_id["P3"]["route"], "E")

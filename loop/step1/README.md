@@ -87,7 +87,8 @@ python -m loop.step1.step1_public \
   --output-dir loop/step1/output
 ```
 
-`result.csv` 包含 S/E 路由、Step 1 标签、纳入概率、逆概率权重和 JSON 审计字段。
+`result.csv` 包含申请日期、S/E 路由、Step 1 标签、纳入概率、逆概率权重和 JSON 审计字段。
+申请日期只作为通用元数据向后传递，供 Step 3 恢复申请年份并执行年份均衡抽样。
 `manifest.json` 中的 `"input_source"` 固定为空，只记录输入文件名和 SHA-256，不保存本地
 路径或授权数据地址。
 

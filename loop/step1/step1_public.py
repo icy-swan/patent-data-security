@@ -39,6 +39,7 @@ CONNECTOR_TRANSLATION = str.maketrans(
 OUTPUT_FIELDS = (
     "dataset_id",
     "patent_id",
+    "application_date",
     "source_row_number",
     "association_count",
     "title",

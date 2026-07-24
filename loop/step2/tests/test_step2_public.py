@@ -97,6 +97,10 @@ class PublicStep2Tests(unittest.TestCase):
                 rows = list(reader)
             self.assertEqual(tuple(reader.fieldnames or ()), RESULT_FIELDS)
             self.assertEqual(len(rows), 2)
+            self.assertEqual({row["application_year"] for row in rows}, {"2020", "2021"})
+            self.assertTrue(
+                all(row["combined_step2_inclusion_probability"] for row in rows)
+            )
             forbidden = {
                 "confidence",
                 "usage",
@@ -198,12 +202,14 @@ class PublicStep2Tests(unittest.TestCase):
         fields = (
             "dataset_id",
             "patent_id",
+            "application_date",
             "title",
             "abstract",
             "claim",
             "ipc",
             "route",
             "selected_for_step2",
+            "selection_probability",
         )
         with path.open("w", encoding="utf-8-sig", newline="") as file:
             writer = csv.DictWriter(file, fieldnames=fields)
@@ -213,32 +219,38 @@ class PublicStep2Tests(unittest.TestCase):
                     {
                         "dataset_id": "toy",
                         "patent_id": "P1",
+                        "application_date": "2020-01-01",
                         "title": "toy one",
                         "abstract": "ordinary",
                         "claim": "toy shield",
                         "ipc": "",
                         "route": "S",
                         "selected_for_step2": "true",
+                        "selection_probability": "1",
                     },
                     {
                         "dataset_id": "toy",
                         "patent_id": "P2",
+                        "application_date": "2021-01-01",
                         "title": "toy two",
                         "abstract": "ordinary",
                         "claim": "ordinary claim",
                         "ipc": "",
                         "route": "E",
                         "selected_for_step2": "true",
+                        "selection_probability": "0.5",
                     },
                     {
                         "dataset_id": "toy",
                         "patent_id": "P3",
+                        "application_date": "2022-01-01",
                         "title": "toy three",
                         "abstract": "ordinary",
                         "claim": "ordinary claim",
                         "ipc": "",
                         "route": "E",
                         "selected_for_step2": "false",
+                        "selection_probability": "0.5",
                     },
                 ]
             )

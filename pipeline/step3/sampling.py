@@ -597,15 +597,15 @@ def prepare_negative_sample(
         "combined_result_complete": False,
         "stale_split_files_must_not_be_used": True,
     }
-    manifest["dual_cohort_expansion"] = {
-        "positive_records_preserved": 5_000,
-        "negative_records_added": 5_000,
+    manifest["dual_cohort_design"] = {
+        "positive_priority_records": 5_000,
+        "negative_priority_records": 5_000,
         "cohort_overlap_records": 0,
         "negative_step2_predicted_ratio": "2:3",
         "negative_subgroup_ratio": "hard_negative:easy_negative=1:2",
         "combined_step2_predicted_ratio": "1:1",
-        "gold_ratio_status": "unknown_until_negative_human_review",
-        "expanded_at": _now(),
+        "gold_ratio_status": "unknown_until_human_review",
+        "prepared_at": _now(),
     }
     manifest.pop("human_results", None)
     atomic_json_write(paths.manifest, manifest)

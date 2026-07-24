@@ -35,6 +35,40 @@ python -m pipeline.step3 prepare-negative
 不确定性提示。人工只填写 `human_review_label` 和 `human_reason`；标签只能是
 `DATA_SECURITY` 或 `OTHER`。`sample_cohort` 用于防止两批数据混淆。
 
+## 可选的 Kimi K3 测试复核
+
+K3 测试复核与人工结果、Codex 模拟完全隔离。它使用 `.env` 中标记为
+`ARK_API_KEY_KIND=agent-plan` 的方舟 Agent Plan Key，固定通过
+`https://ark.cn-beijing.volces.com/api/plan/v3` 调用 `kimi-k3`。每件专利单独发起一次
+Responses 请求，不合并上下文；并发只控制同时在途的独立请求数。
+
+先冻结 K3 专用任务库：
+
+```bash
+python -m pipeline.step3 prepare-k3
+```
+
+收到明确执行命令后，才可启动：
+
+```bash
+python -m pipeline.step3 start-k3
+tail -f data/step3/k3_runner.log
+python -m pipeline.step3 status-k3
+```
+
+需要安全停止或重置达到最大重试次数的失败项时使用：
+
+```bash
+python -m pipeline.step3 stop-k3
+python -m pipeline.step3 retry-k3
+```
+
+只有 10,000 条全部成功后才原子生成 `k3_result.csv`。它完整保留人工复核输入的 24 列，
+并在末尾追加 `k3_review_label`、`k3_reason` 两列。K3 结果固定属于模型测试结果，不是 Gold，
+不能直接进入 `merge`、`finalize`、训练集或正式评估。运行状态单独保存在
+`k3_tasks.sqlite3`、`k3_manifest.json` 和 `k3_progress.json`，不会修改 Codex 使用的
+`tasks.sqlite3`、`progress.json` 与 `simulation.csv`。
+
 第一批已复核结果保存为 `result_positive.csv`。第二批复核完成后保存为
 `result_negative.csv`，再执行：
 

@@ -35,6 +35,7 @@ include = ["pipeline*"]
 [tool.setuptools.package-data]
 "pipeline.step1" = ["resources/*.json", "resources/*.md"]
 "pipeline.step2" = ["resources/*.json", "resources/*.txt"]
+"pipeline.step3" = ["resources/*.txt"]
 
 [tool.ruff]
 line-length = 100

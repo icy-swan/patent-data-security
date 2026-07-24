@@ -6,7 +6,7 @@ from pathlib import Path
 from pipeline.step2.__main__ import _format_duration, _print_progress, build_parser
 from pipeline.step2.client import ClassificationResponse
 from pipeline.step2.prompt import load_prompt_bundle
-from pipeline.step2.runner import _exclusive_lock, run_tasks
+from pipeline.step2.runner import _classification_payload, _exclusive_lock, run_tasks
 from pipeline.step2.schema import PatentClassification
 from pipeline.step2.tasks import prepare_task_pool, prepare_tasks
 
@@ -147,6 +147,32 @@ def test_step2_defaults_to_ten_concurrent_requests() -> None:
     assert args.concurrency == 10
     pool_args = build_parser().parse_args(["run", "--dataset-id", "pool-50000"])
     assert pool_args.dataset_id == "pool-50000"
+
+
+def test_failed_structured_output_retry_gets_compact_recovery_instruction() -> None:
+    payload = _classification_payload(
+        {
+            "payload_json": json.dumps({"patent_id": "CN-A", "claim": "测试权项"}),
+            "attempts": 1,
+            "error": "ClassificationOutputError: missing required field",
+        }
+    )
+
+    assert payload["patent_id"] == "CN-A"
+    assert "严格符合既定 JSON Schema" in payload["_retry_output_instruction"]
+    assert payload["_retry_input_mode"] == "compact_schema_recovery"
+
+
+def test_connection_retry_does_not_change_model_input() -> None:
+    payload = _classification_payload(
+        {
+            "payload_json": json.dumps({"patent_id": "CN-A", "claim": "测试权项"}),
+            "attempts": 1,
+            "error": "APIConnectionError: Connection error.",
+        }
+    )
+
+    assert payload == {"patent_id": "CN-A", "claim": "测试权项"}
 
 
 def test_prepare_cross_year_fixed_size_pool_is_deterministic(tmp_path: Path) -> None:

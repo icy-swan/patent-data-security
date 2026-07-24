@@ -8,7 +8,7 @@ import json
 import os
 import sqlite3
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -66,6 +66,13 @@ RESULT_FIELDS = (
     "usage",
     "error",
     "completed_at",
+)
+
+RETRY_OUTPUT_INSTRUCTION = (
+    "上一次响应未能通过结构化输出校验。请不要输出分析过程或 Markdown，只返回一个完整、"
+    "精简且严格符合既定 JSON Schema 的对象。必须补齐所有 required 字段；evidence 的每一项"
+    "必须同时包含 field 和逐字 quote。请压缩 technical_scope、legal_scope、reason 和 evidence，"
+    "避免因输出过长而截断，但不得改变分类标准或省略判定所需证据。"
 )
 
 
@@ -193,7 +200,7 @@ def _run_loop(
 ) -> None:
     def classify(task: sqlite3.Row) -> ClassificationResponse | Exception:
         try:
-            return client.classify(json.loads(task["payload_json"]))
+            return client.classify(_classification_payload(task))
         except Exception as error:  # noqa: BLE001 - persisted for retry/audit
             return error
 
@@ -261,6 +268,15 @@ def _run_loop(
             atomic_json_write(paths.progress, progress)
             if progress_callback:
                 progress_callback(progress)
+
+
+def _classification_payload(task: Mapping[str, Any]) -> dict[str, Any]:
+    payload = json.loads(task["payload_json"])
+    prior_error = str(task["error"] or "")
+    if int(task["attempts"]) > 0 and prior_error.startswith("ClassificationOutputError:"):
+        payload["_retry_output_instruction"] = RETRY_OUTPUT_INSTRUCTION
+        payload["_retry_input_mode"] = "compact_schema_recovery"
+    return payload
 
 
 def _claim_next(

@@ -1,0 +1,17 @@
+{
+  "schema_version": "public-step1-rules-v1",
+  "disclosure_note": "The production taxonomy is intentionally not included. Populate this template only with terms that may be publicly released.",
+  "matching": {
+    "fields": [
+      "claim",
+      "abstract",
+      "title"
+    ],
+    "context_window_chars": 48,
+    "ipc_changes_route": false
+  },
+  "concepts": [],
+  "context_lexicons": [],
+  "diagnostic_patterns": [],
+  "ipc_audit_rules": []
+}

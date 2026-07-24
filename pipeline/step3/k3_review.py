@@ -28,6 +28,7 @@ from pipeline.step2.client import (
     _response_diagnostic,
     _usage_dict,
 )
+from pipeline.step2.prompt import DEFAULT_RESOURCE_DIR, load_prompt_bundle
 from pipeline.step3.sampling import (
     MANUAL_REVIEW_FIELDS,
     NEGATIVE_COHORT,
@@ -36,8 +37,8 @@ from pipeline.step3.sampling import (
 
 DEFAULT_K3_MODEL = "kimi-k3"
 AGENT_PLAN_BASE_URL = "https://ark.cn-beijing.volces.com/api/plan/v3"
-K3_REVIEW_VERSION = "step3-kimi-k3-agent-plan-review-v1.0.0"
-K3_PROMPT_VERSION = "step3-k3-review-v1.0.0"
+K3_REVIEW_VERSION = "step3-kimi-k3-agent-plan-review-v1.2.0"
+K3_PROMPT_VERSION = "step3-k3-review-with-data-security-law-v1.2.0"
 K3_REVIEW_FIELDS = ("k3_review_label", "k3_reason")
 K3_RESULT_FIELDS = MANUAL_REVIEW_FIELDS + K3_REVIEW_FIELDS
 K3_PROMPT_PATH = Path(__file__).resolve().parent / "resources" / "k3_review_prompt.txt"
@@ -60,6 +61,7 @@ class K3ReviewResponse:
     actual_model: str
     prompt_version: str
     prompt_sha256: str
+    law_sha256: str
     schema_sha256: str
     elapsed_seconds: float
     usage: dict[str, Any]
@@ -116,9 +118,19 @@ class AgentPlanKimiReviewClient:
             raise ValueError("ARK_API_KEY is required for Kimi K3 Agent Plan review")
         self.model = model
         self.base_url = base_url.rstrip("/")
-        self.prompt = K3_PROMPT_PATH.read_text(encoding="utf-8").strip() + "\n"
+        prompt_instruction = K3_PROMPT_PATH.read_text(encoding="utf-8").strip()
+        law_bundle = load_prompt_bundle()
+        self.law_sha256 = law_bundle.law_sha256
+        self.law_resource_version = law_bundle.law_resource_version
+        self.prompt = (
+            prompt_instruction
+            + "\n\n<中华人民共和国数据安全法_全文>\n"
+            + law_bundle.law_text.strip()
+            + "\n</中华人民共和国数据安全法_全文>\n"
+        )
         self.prompt_version = K3_PROMPT_VERSION
-        self.prompt_sha256 = sha256_file(K3_PROMPT_PATH)
+        self.prompt_instruction_sha256 = sha256_file(K3_PROMPT_PATH)
+        self.prompt_sha256 = hashlib.sha256(self.prompt.encode()).hexdigest()
         schema_json = json.dumps(
             K3Review.model_json_schema(),
             ensure_ascii=False,
@@ -160,7 +172,7 @@ class AgentPlanKimiReviewClient:
                     "schema": K3Review.model_json_schema(),
                 }
             },
-            "max_output_tokens": 1_024,
+            "max_output_tokens": 4_096,
         }
         started = time.monotonic()
         response = self._client.responses.create(**request)
@@ -173,7 +185,11 @@ class AgentPlanKimiReviewClient:
             if not raw_text:
                 raw_text = _extract_output_text(response)
             value, _ = _parse_json_object(raw_text)
-            review = K3Review.model_validate(value)
+            review = _normalize_k3_review(
+                value,
+                expected_sample_id=str(row.get("sample_id", "")),
+                expected_patent_id=str(row.get("patent_id", "")),
+            )
         except Exception as error:
             if not raw_text:
                 raw_text = _response_diagnostic(response)
@@ -191,6 +207,7 @@ class AgentPlanKimiReviewClient:
             actual_model=actual_model,
             prompt_version=self.prompt_version,
             prompt_sha256=self.prompt_sha256,
+            law_sha256=self.law_sha256,
             schema_sha256=self.schema_sha256,
             elapsed_seconds=elapsed,
             usage=usage,
@@ -308,6 +325,7 @@ def prepare_k3_review(
               actual_model TEXT,
               prompt_version TEXT,
               prompt_sha256 TEXT,
+              law_sha256 TEXT,
               schema_sha256 TEXT,
               response_id TEXT,
               review_json TEXT,
@@ -363,12 +381,22 @@ def prepare_k3_review(
 
     for path in (paths.progress, paths.result, paths.pid, paths.log):
         path.unlink(missing_ok=True)
+    law_bundle = load_prompt_bundle()
     manifest = {
         "review_version": K3_REVIEW_VERSION,
         "model": DEFAULT_K3_MODEL,
         "request_granularity": "one_patent_per_request",
         "agent_plan_base_url": AGENT_PLAN_BASE_URL,
         "agent_plan_key_kind": "agent-plan",
+        "fixed_prompt": {
+            "prompt_version": K3_PROMPT_VERSION,
+            "instruction_path": str(K3_PROMPT_PATH),
+            "instruction_sha256": sha256_file(K3_PROMPT_PATH),
+            "law_path": str(DEFAULT_RESOURCE_DIR / "data_security_law.txt"),
+            "law_sha256": law_bundle.law_sha256,
+            "law_resource_version": law_bundle.law_resource_version,
+            "composition": "review_instruction + full_data_security_law",
+        },
         "records": len(frozen_rows),
         "sources": source_records,
         "source_step3_manifest": str(manifest_path),
@@ -745,7 +773,7 @@ def _persist_outcome(
         connection.execute(
             """
             UPDATE tasks SET status='succeeded',actual_model=?,prompt_version=?,
-              prompt_sha256=?,schema_sha256=?,response_id=?,review_json=?,
+              prompt_sha256=?,law_sha256=?,schema_sha256=?,response_id=?,review_json=?,
               raw_response=?,usage_json=?,error=NULL,
               elapsed_seconds=elapsed_seconds+?,updated_at=?,completed_at=?
             WHERE sample_id=?
@@ -754,6 +782,7 @@ def _persist_outcome(
                 outcome.actual_model,
                 outcome.prompt_version,
                 outcome.prompt_sha256,
+                outcome.law_sha256,
                 outcome.schema_sha256,
                 outcome.response_id,
                 outcome.review.model_dump_json(),
@@ -832,6 +861,7 @@ def _validate_runtime_identity(
         "base_url": client.base_url,
         "prompt_version": client.prompt_version,
         "prompt_sha256": client.prompt_sha256,
+        "law_sha256": client.law_sha256,
         "schema_sha256": client.schema_sha256,
         "request_granularity": "one_patent_per_request",
     }
@@ -869,6 +899,60 @@ def _validate_agent_plan_configuration(base_url: str, api_key_kind: str | None) 
             "Kimi K3 review requires ARK_API_KEY_KIND=agent-plan; "
             f"got {api_key_kind!r}"
         )
+
+
+def _normalize_k3_review(
+    value: Mapping[str, Any],
+    *,
+    expected_sample_id: str,
+    expected_patent_id: str,
+) -> K3Review:
+    """Normalize Kimi's observed aliases while preserving the two-column contract."""
+
+    returned_sample_id = str(value.get("sample_id", "") or "")
+    returned_patent_id = str(value.get("patent_id", "") or "")
+    if returned_sample_id and returned_sample_id != expected_sample_id:
+        raise ValueError(
+            "K3 returned a different sample_id: "
+            f"expected={expected_sample_id!r}, actual={returned_sample_id!r}"
+        )
+    if returned_patent_id and returned_patent_id != expected_patent_id:
+        raise ValueError(
+            "K3 returned a different patent_id: "
+            f"expected={expected_patent_id!r}, actual={returned_patent_id!r}"
+        )
+
+    label_keys = (
+        "k3_review_label",
+        "k3_final_label",
+        "k3_label",
+        "step3_label",
+        "final_label",
+        "label",
+    )
+    labels = {
+        str(value[key]).strip().upper()
+        for key in label_keys
+        if value.get(key) not in (None, "")
+    }
+    invalid_labels = sorted(labels - {"DATA_SECURITY", "OTHER"})
+    if invalid_labels:
+        raise ValueError(f"K3 returned invalid label values: {invalid_labels}")
+    if len(labels) != 1:
+        raise ValueError(f"K3 must return one unambiguous review label, got {sorted(labels)}")
+
+    reason = next(
+        (
+            str(value[key]).strip()
+            for key in ("k3_reason", "review_reason", "reason")
+            if str(value.get(key, "") or "").strip()
+        ),
+        "",
+    )
+    return K3Review(
+        k3_review_label=next(iter(labels)),
+        k3_reason=reason,
+    )
 
 
 def _read_review_csv(path: Path) -> tuple[list[str], list[dict[str, str]]]:

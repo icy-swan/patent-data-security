@@ -117,7 +117,8 @@ python -m pipeline.step3 finalize
 `data/step3/dataset/` 下的训练、验证和测试切分；Codex 模拟和可选的 Kimi K3 Agent Plan
 测试复核都不生成训练数据。K3 对每件专利单独请求，完成后只写
 `data/step3/k3_result.csv`，追加 `k3_review_label`、`k3_reason` 两列，并使用独立任务库，
-不覆盖人工字段或 Codex 模拟状态。`evaluate`
+不覆盖人工字段或 Codex 模拟状态。K3 的固定系统前缀同时包含复核规则与经过哈希校验的
+《中华人民共和国数据安全法》全文，法律版本和组合 Prompt 哈希均落入审计信息。`evaluate`
 会把 Step 1/2 的混淆矩阵、Accuracy、
 Precision、Recall、Specificity、F1 等样本指标和设计加权指标写入 `manifest.json`；`finalize`
 也会自动刷新这些指标。

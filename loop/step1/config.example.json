@@ -1,0 +1,18 @@
+{
+  "input_csv": "",
+  "output_dir": "output",
+  "dataset_id": "",
+  "encoding": "utf-8-sig",
+  "rules_file": "rules.template.json",
+  "e_sample_rate": 0.02,
+  "e_sample_seed": "public-step1-e-sample-v1",
+  "columns": {
+    "patent_id": "patent_id",
+    "title": "title",
+    "abstract": "abstract",
+    "claim": "claim",
+    "ipc": "ipc",
+    "applicant": "applicant",
+    "application_date": "application_date"
+  }
+}

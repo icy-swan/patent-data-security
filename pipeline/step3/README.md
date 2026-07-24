@@ -40,7 +40,10 @@ python -m pipeline.step3 prepare-negative
 K3 测试复核与人工结果、Codex 模拟完全隔离。它使用 `.env` 中标记为
 `ARK_API_KEY_KIND=agent-plan` 的方舟 Agent Plan Key，固定通过
 `https://ark.cn-beijing.volces.com/api/plan/v3` 调用 `kimi-k3`。每件专利单独发起一次
-Responses 请求，不合并上下文；并发只控制同时在途的独立请求数。
+Responses 请求，不合并上下文；并发只控制同时在途的独立请求数。每次请求的固定系统前缀由
+K3 复核规则和 `pipeline/step2/resources/data_security_law.txt` 中经过 manifest 哈希校验的
+《中华人民共和国数据安全法》全文组成，单件专利及 Step 1/2 审计信息只进入动态后缀。
+Prompt 组合哈希和法律全文哈希都会进入 K3 任务身份，任何一项变化都会拒绝与旧进度混跑。
 
 先冻结 K3 专用任务库：
 

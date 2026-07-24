@@ -16,6 +16,7 @@ from pipeline.step3.k3_review import (
     AgentPlanKimiReviewClient,
     K3Review,
     K3ReviewResponse,
+    _normalize_k3_review,
     prepare_k3_review,
     run_k3_reviews,
 )
@@ -69,14 +70,58 @@ def test_k3_client_sends_one_patent_and_requests_only_two_review_fields() -> Non
     assert len(responses.calls) == 1
     request = responses.calls[0]
     assert request["model"] == "kimi-k3"
+    assert request["max_output_tokens"] == 4_096
     assert set(request["text"]["format"]["schema"]["properties"]) == {
         "k3_review_label",
         "k3_reason",
     }
+    system_prompt = request["input"][0]["content"]
+    assert "<中华人民共和国数据安全法_全文>" in system_prompt
+    assert "第五十五条" in system_prompt
+    assert len(system_prompt) > 6_000
+    assert result.law_sha256 == client.law_sha256
     dynamic_message = request["input"][1]["content"]
     assert dynamic_message.count('"sample_id"') == 1
     assert "human_review_label" not in dynamic_message
     assert "human_reason" not in dynamic_message
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (
+            {
+                "k3_label": "OTHER",
+                "k3_final_label": "OTHER",
+                "k3_reason": "专利只涉及机械结构，不含数据安全技术措施。",
+                "k3_confidence": 0.98,
+            },
+            "OTHER",
+        ),
+        (
+            {
+                "sample_id": "sample-1",
+                "patent_id": "CN1",
+                "step3_label": "DATA_SECURITY",
+                "k3_reason": "主权项披露加密与身份鉴别技术。",
+                "evidence": [],
+            },
+            "DATA_SECURITY",
+        ),
+    ],
+)
+def test_normalizes_observed_kimi_aliases(
+    value: dict[str, Any],
+    expected: str,
+) -> None:
+    review = _normalize_k3_review(
+        value,
+        expected_sample_id="sample-1",
+        expected_patent_id="CN1",
+    )
+
+    assert review.k3_review_label == expected
+    assert review.k3_reason
 
 
 def test_k3_client_rejects_non_agent_plan_configuration() -> None:
@@ -134,6 +179,7 @@ def test_k3_runner_keeps_separate_state_and_appends_exact_review_columns(
         base_url = AGENT_PLAN_BASE_URL
         prompt_version = "test-prompt"
         prompt_sha256 = "prompt-sha"
+        law_sha256 = "law-sha"
         schema_sha256 = "schema-sha"
 
         def __init__(self) -> None:
@@ -152,6 +198,7 @@ def test_k3_runner_keeps_separate_state_and_appends_exact_review_columns(
                 actual_model=self.model,
                 prompt_version=self.prompt_version,
                 prompt_sha256=self.prompt_sha256,
+                law_sha256=self.law_sha256,
                 schema_sha256=self.schema_sha256,
                 elapsed_seconds=0.01,
                 usage={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},

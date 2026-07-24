@@ -959,7 +959,16 @@ manifest。
 K3 输入是两个 `need_manual_review_{positive,negative}.csv` 的完整 10,000 条记录。每件专利
 单独发起一次 Responses 请求，不用 JSONL 整批提交，也不使用前一件专利的 response ID 或
 上下文。可配置的并发只表示同时存在多个相互独立的单件请求。K3 可以看到 Step 1/2 标签、证据
-与理由，但 Prompt 要求回到专利正文复核，不得把既有模型结论当作真值。结构化输出只允许：
+与理由，但 Prompt 要求回到专利正文复核，不得把既有模型结论当作真值。
+
+K3 的固定系统前缀按稳定顺序拼接“复核规则 +《中华人民共和国数据安全法》全文”。法律全文
+直接复用 Step 2 的 `pipeline/step2/resources/data_security_law.txt`，并通过同一
+`law_manifest.json` 校验文件哈希、法条数量和资源版本，不复制第二份可能漂移的法律文本。
+法律用于界定数据、数据处理、数据安全、合法利用和风险治理的边界，但不能替代专利正文证据；
+不得仅凭法条或普通数据处理表述判为正类。K3 manifest 与 SQLite 任务身份同时记录复核规则
+哈希、法律全文哈希、组合 Prompt 哈希和 Schema 哈希，任一变化时拒绝混用旧进度。
+
+结构化输出只允许：
 
 ```text
 k3_review_label,k3_reason

@@ -53,7 +53,6 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_pool.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     prepare_pool.add_argument("--pool-size", type=int, default=DEFAULT_POOL_SIZE)
     prepare_pool.add_argument("--pool-seed", default=DEFAULT_POOL_SEED)
-    prepare_pool.add_argument("--pool-id", default=DEFAULT_POOL_ID)
     prepare_pool.add_argument("--encoding", default="utf-8-sig")
     prepare_pool.add_argument("--rebuild", action="store_true")
 
@@ -138,7 +137,6 @@ def main() -> int:
             args.output_dir,
             pool_size=args.pool_size,
             pool_seed=args.pool_seed,
-            pool_id=args.pool_id,
             encoding=args.encoding,
             rebuild=args.rebuild,
         )

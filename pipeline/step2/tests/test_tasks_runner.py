@@ -231,7 +231,7 @@ def test_prepare_cross_year_fixed_size_pool_is_deterministic(tmp_path: Path) -> 
         pool_seed="fixed-test-seed",
         pool_id="pool-test",
     )
-    assert paths.database == (tmp_path / "step2" / "pool-test" / "tasks.sqlite3").resolve()
+    assert paths.database == (tmp_path / "step2" / "tasks.sqlite3").resolve()
     assert manifest["candidate_frame"]["candidate_rows"] == 4
     assert manifest["candidate_frame"]["unique_patents"] == 4
     assert manifest["task_counts"]["total"] == 3

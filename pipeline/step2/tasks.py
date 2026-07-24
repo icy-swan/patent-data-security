@@ -34,9 +34,14 @@ class Step2TaskPaths:
     progress: Path
 
 
-def task_paths(output_dir: str | Path, dataset: str) -> Step2TaskPaths:
+def task_paths(
+    output_dir: str | Path,
+    dataset: str,
+    *,
+    flat: bool = False,
+) -> Step2TaskPaths:
     output_root = Path(output_dir).resolve()
-    root = output_root if dataset == DEFAULT_POOL_ID else output_root / dataset
+    root = output_root if flat or dataset == DEFAULT_POOL_ID else output_root / dataset
     return Step2TaskPaths(
         database=root / "tasks.sqlite3",
         manifest=root / "manifest.json",
@@ -152,7 +157,7 @@ def prepare_task_pool(
     return _materialize_tasks(
         sources=sources,
         selections=selections,
-        paths=task_paths(output_dir, pool_id),
+        paths=task_paths(output_dir, pool_id, flat=True),
         task_namespace=pool_id,
         manifest_context=manifest_context,
         prompt_bundle=bundle,

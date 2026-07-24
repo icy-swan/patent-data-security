@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PublicStep2Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "label",
+    "reason",
+    "evidence"
+  ],
+  "properties": {
+    "label": {
+      "type": "string",
+      "enum": [
+        "DATA_SECURITY",
+        "OTHER"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 2000
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "field",
+          "quote"
+        ],
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "title",
+              "abstract",
+              "claim"
+            ]
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

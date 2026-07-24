@@ -1,11 +1,11 @@
-# Public paper code
+# 论文公开代码
 
-This directory contains a compact reference implementation that can be shared with a paper.
-It documents the computational logic without distributing project-specific assets.
+本目录提供可随论文对外分享的精简参考实现。代码保留方法复现所需的计算逻辑，但不发布项目
+专属资产、数据位置或大模型接入方案。
 
-- `step1/`: deterministic S/E routing, stable sampling, and audit outputs.
-- `step2/`: reserved for the public Step 2 implementation.
+- `step1/`：规则路由、稳定抽样和审计输出；
+- `step2/`：固定任务池、逐件模型识别、严格 JSON 校验和结果导出。
 
-The public package intentionally excludes production keyword dictionaries, expert lexicons,
-raw-data locations, private validation samples, API keys, model credentials, and unpublished
-intermediate results.
+公开内容有意排除生产关键词词典、专家词表、原始数据地址、私有验证样本、凭证、供应商请求
+参数及未发表的中间结果。示例配置中的输入地址均为空，使用者需在本地未跟踪的配置文件中
+补充自己的数据路径。

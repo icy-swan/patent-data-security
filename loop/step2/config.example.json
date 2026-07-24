@@ -1,0 +1,8 @@
+{
+  "step1_results": [],
+  "output_dir": "output",
+  "prompt_file": "prompt.template.txt",
+  "pool_size": 50000,
+  "pool_seed": "public-step2-pool-v1",
+  "encoding": "utf-8-sig"
+}

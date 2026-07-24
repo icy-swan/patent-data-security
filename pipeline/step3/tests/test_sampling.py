@@ -148,13 +148,15 @@ def test_exact_text_duplicates_never_cross_splits() -> None:
 
 
 def test_database_discovery_excludes_retry_backups(tmp_path: Path) -> None:
-    current = tmp_path / "2021" / "tasks.sqlite3"
-    current.parent.mkdir()
+    current = tmp_path / "tasks.sqlite3"
+    nested = tmp_path / "2021" / "tasks.sqlite3"
+    nested.parent.mkdir()
     backup = tmp_path / "step2_tasks_2021.before_retry_20260716.sqlite3"
     current.touch()
+    nested.touch()
     backup.touch()
 
-    assert discover_step2_databases(tmp_path) == [current]
+    assert discover_step2_databases(tmp_path) == sorted([current, nested])
 
 
 def test_step3_paths_use_flat_runtime_and_dataset_directories(tmp_path: Path) -> None:

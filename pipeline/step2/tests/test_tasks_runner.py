@@ -8,7 +8,7 @@ from pipeline.step2.client import ClassificationResponse
 from pipeline.step2.prompt import load_prompt_bundle
 from pipeline.step2.runner import _classification_payload, _exclusive_lock, run_tasks
 from pipeline.step2.schema import PatentClassification
-from pipeline.step2.tasks import prepare_task_pool, prepare_tasks
+from pipeline.step2.tasks import DEFAULT_POOL_ID, prepare_task_pool, prepare_tasks, task_paths
 
 
 def _write_inputs(tmp_path: Path) -> tuple[Path, Path]:
@@ -143,10 +143,10 @@ def test_runner_writes_model_result_under_local_patent_id_and_resumes(tmp_path: 
 
 
 def test_step2_defaults_to_ten_concurrent_requests() -> None:
-    args = build_parser().parse_args(["run", "--input", "patents_2026.csv"])
+    args = build_parser().parse_args(["run"])
     assert args.concurrency == 10
-    pool_args = build_parser().parse_args(["run", "--dataset-id", "pool-50000"])
-    assert pool_args.dataset_id == "pool-50000"
+    assert args.dataset_id is None
+    assert args.input is None
 
 
 def test_failed_structured_output_retry_gets_compact_recovery_instruction() -> None:
@@ -231,6 +231,7 @@ def test_prepare_cross_year_fixed_size_pool_is_deterministic(tmp_path: Path) -> 
         pool_seed="fixed-test-seed",
         pool_id="pool-test",
     )
+    assert paths.database == (tmp_path / "step2" / "pool-test" / "tasks.sqlite3").resolve()
     assert manifest["candidate_frame"]["candidate_rows"] == 4
     assert manifest["candidate_frame"]["unique_patents"] == 4
     assert manifest["task_counts"]["total"] == 3
@@ -263,6 +264,13 @@ def test_prepare_cross_year_fixed_size_pool_is_deterministic(tmp_path: Path) -> 
         round(combined * weight, 12) == 1
         for _upstream, _pool, combined, weight in probabilities
     )
+
+
+def test_default_fixed_pool_uses_step2_root(tmp_path: Path) -> None:
+    paths = task_paths(tmp_path / "step2", DEFAULT_POOL_ID)
+
+    assert paths.database == (tmp_path / "step2" / "tasks.sqlite3").resolve()
+    assert paths.results == (tmp_path / "step2" / "result.csv").resolve()
 
 
 def test_runner_removes_lock_after_exit(tmp_path: Path) -> None:

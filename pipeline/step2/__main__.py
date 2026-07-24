@@ -90,9 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _add_task_selector(parser: argparse.ArgumentParser) -> None:
-    selector = parser.add_mutually_exclusive_group(required=True)
+    selector = parser.add_mutually_exclusive_group()
     selector.add_argument("--input", type=Path, help="Resolve the task dataset ID from a file")
-    selector.add_argument("--dataset-id", help="Use an already prepared task dataset ID")
+    selector.add_argument(
+        "--dataset-id",
+        help="Use an already prepared per-dataset task directory; omitted for the fixed pool",
+    )
 
 
 def main() -> int:
@@ -148,7 +151,10 @@ def main() -> int:
         )
         return 0
 
-    token = args.dataset_id or dataset_id(args.input)
+    token = (
+        args.dataset_id
+        or (dataset_id(args.input) if args.input is not None else DEFAULT_POOL_ID)
+    )
     paths = task_paths(args.output_dir, token)
     if args.command == "start":
         return _start_background(args, paths)

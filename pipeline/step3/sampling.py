@@ -156,12 +156,12 @@ def step3_paths(output_dir: str | Path) -> Step3Paths:
 
 def discover_step2_databases(step2_dir: str | Path) -> list[Path]:
     root = Path(step2_dir).resolve()
-    canonical = root.glob("*/tasks.sqlite3")
+    canonical = (root / "tasks.sqlite3", *root.glob("*/tasks.sqlite3"))
     legacy = root.glob("step2_tasks_*.sqlite3")
     return sorted(
         path
         for path in {*canonical, *legacy}
-        if ".before_" not in path.name
+        if path.is_file() and ".before_" not in path.name
     )
 
 

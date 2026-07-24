@@ -33,11 +33,10 @@ python -m pipeline.step2 prepare-pool \
   --output-dir data/step2 \
   --pool-size 50000 \
   --pool-seed step2-global-pool-v1 \
-  --pool-id pool-50000 \
   --rebuild
 ```
 
-这条命令只准备任务，不调用模型。正式产物写入 `data/step2/pool-50000/`：
+这条命令只准备任务，不调用模型。正式产物直接写入 `data/step2/`：
 
 - `requests.jsonl`：50,000 条待识别动态载荷的离线审计副本，一行一件专利，不作为批量请求体；
 - `tasks.sqlite3`：本地任务绑定、状态、两阶段抽样概率和恢复信息；
@@ -45,14 +44,12 @@ python -m pipeline.step2 prepare-pool \
 
 二次纳入概率为 `50000 / 224906`。最终 `selection_probability` 等于 Step 1 纳入概率乘以
 该二次概率，`sample_weight` 是其倒数。实际样本含 `S_all` 21,711 件、`E_random`
-28,289 件；未强制年份或路由配额。程序仍保留单年份 `prepare --input ...` 入口，但本轮
-生产任务统一使用 `pool-50000`。
+28,289 件；未强制年份或路由配额。程序仍保留单年份 `prepare --input ...` 入口。
 
 收到明确识别命令后，才可以发送请求：
 
 ```bash
 python -m pipeline.step2 run \
-  --dataset-id pool-50000 \
   --output-dir data/step2 \
   --model glm-5-2-260617 \
   --concurrency 10
@@ -61,14 +58,13 @@ python -m pipeline.step2 run \
 runner 从 `tasks.sqlite3` 每次领取一件专利，为它单独构造“固定 Prompt 前缀 + 当前专利动态
 后缀”，并单独调用一次 Responses API。请求之间不传递历史消息，也不把 `requests.jsonl`
 整包发送给模型。默认并发数为 10，表示最多同时执行 10 个彼此独立的单件请求。运行终端和
-`<dataset>/progress.json` 会持续更新完成数、成功/失败数、本次运行墙钟耗时、累计请求耗时、
+`progress.json` 会持续更新完成数、成功/失败数、本次运行墙钟耗时、累计请求耗时、
 平均请求耗时、预计剩余秒数和预计完成时间。
 
 从仓库根目录 `.env` 读取 Agent Plan Key 并在后台启动：
 
 ```bash
 python -m pipeline.step2 start \
-  --dataset-id pool-50000 \
   --output-dir data/step2 \
   --env-file .env \
   --model glm-5-2-260617 \
@@ -79,14 +75,12 @@ python -m pipeline.step2 start \
 
 ```bash
 python -m pipeline.step2 status \
-  --dataset-id pool-50000 \
   --output-dir data/step2
 
 python -m pipeline.step2 stop \
-  --dataset-id pool-50000 \
   --output-dir data/step2
 
-tail -n 50 -f data/step2/pool-50000/runner.log
+tail -n 50 -f data/step2/runner.log
 ```
 
 `stop` 发送 `SIGTERM`：runner 停止领取新任务，等待正在执行的请求完成并落库后退出。日志中的 `Ctrl-C` 只退出 `tail`，不会停止后台分类。
@@ -95,7 +89,7 @@ tail -n 50 -f data/step2/pool-50000/runner.log
 
 `DATA_SECURITY` 结果同时输出 `processing_activities`（收集、存储、使用、加工、传输、提供、公开、其他）和 `industry_sectors`（工业、电信、交通、金融、自然资源、卫生健康、教育、科技、其他）两个受控多标签维度。`OTHER` 的两个维度固定为 `["other"]`；后续子类分析只使用主标签为 `DATA_SECURITY` 的行。
 
-本轮 Step 2 使用跨年份任务池 `data/step2/pool-50000/`，完成后目录内保留
+本轮 Step 2 使用跨年份固定任务池，产物直接保存在 `data/step2/`，完成后目录内保留
 `requests.jsonl`、`result.csv`、`manifest.json`、`tasks.sqlite3` 和 `progress.json`。
 后台运行期间产生的
 `runner.pid`、`runner.log`、锁文件及 SQLite sidecar 会在全部任务成功后删除。

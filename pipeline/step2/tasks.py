@@ -35,7 +35,8 @@ class Step2TaskPaths:
 
 
 def task_paths(output_dir: str | Path, dataset: str) -> Step2TaskPaths:
-    root = Path(output_dir).resolve() / dataset
+    output_root = Path(output_dir).resolve()
+    root = output_root if dataset == DEFAULT_POOL_ID else output_root / dataset
     return Step2TaskPaths(
         database=root / "tasks.sqlite3",
         manifest=root / "manifest.json",
